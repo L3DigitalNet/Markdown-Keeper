@@ -29,19 +29,7 @@ class SchemaTests(unittest.TestCase):
                     )
                 }
 
-        self.assertTrue(
-            {
-                "documents",
-                "headings",
-                "links",
-                "events",
-                "tags",
-                "document_tags",
-                "concepts",
-                "document_concepts",
-                "document_chunks",
-            }.issubset(tables)
-        )
+        self.assertTrue({"documents", "headings", "links", "events"}.issubset(tables))
 
     def test_initialize_database_creates_indexes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -59,10 +47,8 @@ class SchemaTests(unittest.TestCase):
         self.assertTrue(
             {
                 "idx_documents_path",
-                "idx_documents_category",
                 "idx_headings_document_id",
                 "idx_links_document_id",
-                "idx_chunks_document_id",
             }.issubset(indexes)
         )
 

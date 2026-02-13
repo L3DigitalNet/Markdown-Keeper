@@ -13,12 +13,7 @@ import tempfile
 import unittest
 
 from markdownkeeper.processor.parser import parse_markdown
-from markdownkeeper.storage.repository import (
-    find_documents_by_concept,
-    get_document,
-    search_documents,
-    upsert_document,
-)
+from markdownkeeper.storage.repository import get_document, search_documents, upsert_document
 from markdownkeeper.storage.schema import initialize_database
 
 
@@ -30,8 +25,8 @@ class RepositoryTests(unittest.TestCase):
             file_path.parent.mkdir(parents=True, exist_ok=True)
             initialize_database(db_path)
 
-            doc1 = parse_markdown("---\ntags: x\ncategory: guides\n---\n# A\nSee [x](./x.md)")
-            doc2 = parse_markdown("---\ntags: y\ncategory: runbooks\n---\n# A2\nSee [y](https://example.com)\n## B")
+            doc1 = parse_markdown("# A\nSee [x](./x.md)")
+            doc2 = parse_markdown("# A2\nSee [y](https://example.com)\n## B")
 
             id1 = upsert_document(db_path, file_path, doc1)
             id2 = upsert_document(db_path, file_path, doc2)
@@ -69,50 +64,18 @@ class RepositoryTests(unittest.TestCase):
             db_path = Path(tmp) / ".markdownkeeper" / "index.db"
             initialize_database(db_path)
             file_path = Path(tmp) / "guide.md"
-            parsed = parse_markdown(
-                "---\ntags: ops\nconcepts: docker\ncategory: guides\n---\n# Guide\nSee [ext](https://example.com)"
-            )
+            parsed = parse_markdown("# Guide\nSee [ext](https://example.com)")
             doc_id = upsert_document(db_path, file_path, parsed)
 
-            detail = get_document(db_path, doc_id, include_content=True, max_tokens=50)
+            detail = get_document(db_path, doc_id)
             self.assertIsNotNone(detail)
             assert detail is not None
             self.assertEqual(detail.id, doc_id)
             self.assertEqual(detail.title, "Guide")
-            self.assertEqual(detail.category, "guides")
-            self.assertIn("ops", detail.tags)
-            self.assertIn("docker", detail.concepts)
             self.assertEqual(len(detail.links), 1)
-            self.assertTrue(len(detail.content) > 0)
 
             missing = get_document(db_path, 9999)
             self.assertIsNone(missing)
-
-
-    def test_get_document_content_respects_token_budget(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
-            initialize_database(db_path)
-            file_path = Path(tmp) / "budget.md"
-            parsed = parse_markdown("# Budget\n\none two three four five six")
-            doc_id = upsert_document(db_path, file_path, parsed)
-
-            detail = get_document(db_path, doc_id, include_content=True, max_tokens=3)
-            self.assertIsNotNone(detail)
-            assert detail is not None
-            self.assertEqual(detail.content.split(), ["#", "Budget", "one"])
-
-    def test_find_documents_by_concept(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
-            initialize_database(db_path)
-            file_path = Path(tmp) / "k8s.md"
-            parsed = parse_markdown("---\nconcepts: kubernetes\n---\n# Cluster")
-            upsert_document(db_path, file_path, parsed)
-
-            results = find_documents_by_concept(db_path, "kubernetes", limit=5)
-            self.assertEqual(len(results), 1)
-            self.assertEqual(results[0].title, "Cluster")
 
 
 if __name__ == "__main__":

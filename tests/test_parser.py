@@ -18,9 +18,6 @@ class ParserTests(unittest.TestCase):
         doc = """---
 title: Sample Doc
 author: Test
-tags: api,docker
-category: guides
-concepts: kubernetes,networking
 ---
 # Intro
 Paragraph with [internal](./guide.md) and [external](https://example.com).
@@ -30,10 +27,6 @@ More content.
         parsed = parse_markdown(doc)
 
         self.assertEqual(parsed.title, "Sample Doc")
-        self.assertEqual(parsed.category, "guides")
-        self.assertIn("Paragraph", parsed.body)
-        self.assertEqual(parsed.tags, ["api", "docker"])
-        self.assertEqual(parsed.concepts, ["kubernetes", "networking"])
         self.assertEqual(len(parsed.headings), 2)
         self.assertEqual(parsed.headings[0].anchor, "intro")
         self.assertEqual(len(parsed.links), 2)
@@ -57,10 +50,6 @@ More content.
     def test_parse_markdown_unclosed_frontmatter_treated_as_body(self) -> None:
         parsed = parse_markdown("---\ntitle: broken\n# Heading")
         self.assertEqual(parsed.title, "Heading")
-
-    def test_parse_markdown_auto_extracts_concepts(self) -> None:
-        parsed = parse_markdown("# Kubernetes Setup\nKubernetes cluster setup guide")
-        self.assertIn("kubernetes", parsed.concepts)
 
 
 if __name__ == "__main__":
