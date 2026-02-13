@@ -72,6 +72,23 @@ def build_handler(database_path: Path):
                     self._write_json(200, _rpc_success(request_id, asdict(doc)))
                 return
 
+            if self.path == "/api/v1/find_concept" and method == "find_by_concept":
+                concept = str(params.get("concept", "")).strip()
+                max_results = int(params.get("max_results", 10))
+                docs = find_documents_by_concept(database_path, concept, limit=max(1, max_results))
+                self._write_json(
+                    200,
+                    _rpc_success(
+                        request_id,
+                        {
+                            "concept": concept,
+                            "documents": [asdict(item) for item in docs],
+                            "count": len(docs),
+                        },
+                    ),
+                )
+                return
+
             self._write_json(404, _rpc_error(request_id, -32601, "method not found"))
 
         def log_message(self, fmt: str, *args: Any) -> None:  # silence tests

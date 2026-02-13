@@ -5,6 +5,14 @@ from dataclasses import asdict
 import json
 from pathlib import Path
 
+from markdownkeeper.api.server import run_api_server
+from markdownkeeper.config import DEFAULT_CONFIG_PATH, load_config
+from markdownkeeper.indexer.generator import generate_all_indexes
+from markdownkeeper.links.validator import validate_links
+from markdownkeeper.processor.parser import parse_markdown
+from markdownkeeper.storage.repository import find_documents_by_concept, get_document, search_documents, upsert_document
+from markdownkeeper.storage.schema import initialize_database
+from markdownkeeper.watcher.service import watch_loop
 from markdownkeeper.config import DEFAULT_CONFIG_PATH, load_config
 from markdownkeeper.processor.parser import parse_markdown
 from markdownkeeper.storage.repository import get_document, search_documents, upsert_document
@@ -83,6 +91,7 @@ def _handle_scan_file(args: argparse.Namespace) -> int:
 
     content = args.file.read_text(encoding="utf-8")
     parsed = parse_markdown(content)
+    document_id = upsert_document(db_path, args.file.resolve(), parsed)
     document_id = upsert_document(db_path, args.file, parsed)
 
     if args.format == "json":
