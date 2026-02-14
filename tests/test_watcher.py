@@ -19,6 +19,7 @@ from markdownkeeper.watcher.service import (
     _flush_pending_events,
     watch_once,
 )
+from markdownkeeper.watcher.service import watch_once
 
 
 class WatcherTests(unittest.TestCase):

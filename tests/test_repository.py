@@ -24,6 +24,10 @@ from markdownkeeper.storage.repository import (
     semantic_search_documents,
     upsert_document,
 )
+    semantic_search_documents,
+    upsert_document,
+)
+from markdownkeeper.storage.repository import get_document, search_documents, upsert_document
 from markdownkeeper.storage.schema import initialize_database
 
 
@@ -37,6 +41,8 @@ class RepositoryTests(unittest.TestCase):
 
             doc1 = parse_markdown("---\ntags: x\ncategory: guides\n---\n# A\nSee [x](./x.md)")
             doc2 = parse_markdown("---\ntags: y\ncategory: runbooks\n---\n# A2\nSee [y](https://example.com)\n## B")
+            doc1 = parse_markdown("# A\nSee [x](./x.md)")
+            doc2 = parse_markdown("# A2\nSee [y](https://example.com)\n## B")
 
             id1 = upsert_document(db_path, file_path, doc1)
             id2 = upsert_document(db_path, file_path, doc2)
@@ -80,6 +86,10 @@ class RepositoryTests(unittest.TestCase):
             doc_id = upsert_document(db_path, file_path, parsed)
 
             detail = get_document(db_path, doc_id, include_content=True, max_tokens=50)
+            parsed = parse_markdown("# Guide\nSee [ext](https://example.com)")
+            doc_id = upsert_document(db_path, file_path, parsed)
+
+            detail = get_document(db_path, doc_id)
             self.assertIsNotNone(detail)
             assert detail is not None
             self.assertEqual(detail.id, doc_id)
@@ -89,6 +99,7 @@ class RepositoryTests(unittest.TestCase):
             self.assertIn("docker", detail.concepts)
             self.assertEqual(len(detail.links), 1)
             self.assertTrue(len(detail.content) > 0)
+            self.assertEqual(len(detail.links), 1)
 
             missing = get_document(db_path, 9999)
             self.assertIsNone(missing)
