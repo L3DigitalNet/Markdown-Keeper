@@ -9,7 +9,7 @@ This repository now includes a working foundation for MarkdownKeeper:
 - Python package structure under `src/markdownkeeper`
 - Config loading from `markdownkeeper.toml`
 - SQLite schema initialization for core entities (`documents`, `headings`, `links`,
-  `events`)
+  `tags`, `concepts`, `document_chunks`, `embeddings`, `query_cache`, `events`)
 - CLI commands for indexing, retrieval, validation, indexing artifacts, watching, and
   API hosting:
   - `mdkeeper show-config`
@@ -103,13 +103,12 @@ Track progress by checking items as they are completed.
 - [ ] Freeze CLI/API contracts and document compatibility guarantees
 - [ ] Publish changelog, migration notes, and tag `v1.0.0`
 
-## Operations runbook
+## Documentation
 
+- See `docs/USAGE.md` for comprehensive usage documentation covering CLI commands, HTTP
+  API reference, configuration, semantic search, embeddings, and LLM agent integration.
 - See `docs/OPERATIONS_RUNBOOK.md` for install/upgrade/rollback and troubleshooting
   guidance.
-
-## Compatibility guidance
-
 - See `docs/COMPATIBILITY.md` for CLI/API/storage compatibility targets toward `v1.0.0`.
 
 ## Remaining Work
