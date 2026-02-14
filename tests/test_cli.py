@@ -154,6 +154,32 @@ class CliTests(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("not found", buf.getvalue())
 
+
+    def test_get_doc_include_content_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
+            md_file = Path(tmp) / "doc.md"
+            md_file.write_text("# Title\n\nParagraph one.\n\nParagraph two.", encoding="utf-8")
+            with mock.patch("sys.argv", ["mdkeeper", "scan-file", str(md_file), "--db-path", str(db_path)]):
+                main()
+
+            qbuf = io.StringIO()
+            with mock.patch("sys.argv", ["mdkeeper", "query", "Title", "--db-path", str(db_path), "--format", "json"]):
+                with contextlib.redirect_stdout(qbuf):
+                    main()
+            doc_id = json.loads(qbuf.getvalue())["documents"][0]["id"]
+
+            out = io.StringIO()
+            with mock.patch(
+                "sys.argv",
+                ["mdkeeper", "get-doc", str(doc_id), "--db-path", str(db_path), "--format", "json", "--include-content", "--max-tokens", "10"],
+            ):
+                with contextlib.redirect_stdout(out):
+                    code = main()
+            self.assertEqual(code, 0)
+            payload = json.loads(out.getvalue())
+            self.assertIn("content", payload)
+
     def test_get_doc_text_format(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / ".markdownkeeper" / "index.db"
@@ -183,6 +209,116 @@ class CliTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertIn("Summary:", get_buf.getvalue())
 
+
+    def test_check_links_returns_nonzero_when_broken(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
+            docs = Path(tmp) / "docs"
+            docs.mkdir(parents=True, exist_ok=True)
+            md_file = docs / "doc.md"
+            md_file.write_text("# Doc\n[bad](./missing.md)", encoding="utf-8")
+
+            with mock.patch(
+                "sys.argv", ["mdkeeper", "scan-file", str(md_file), "--db-path", str(db_path)]
+            ):
+                main()
+
+            buf = io.StringIO()
+            with mock.patch(
+                "sys.argv",
+                ["mdkeeper", "check-links", "--db-path", str(db_path), "--format", "json"],
+            ):
+                with contextlib.redirect_stdout(buf):
+                    code = main()
+
+            self.assertEqual(code, 1)
+            payload = json.loads(buf.getvalue())
+            self.assertEqual(payload["checked"], 1)
+            self.assertEqual(payload["broken"], 1)
+
+
+
+    def test_find_concept_returns_indexed_document(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
+            md_file = Path(tmp) / "doc.md"
+            md_file.write_text("---\nconcepts: kubernetes\n---\n# Concept Doc", encoding="utf-8")
+            with mock.patch("sys.argv", ["mdkeeper", "scan-file", str(md_file), "--db-path", str(db_path)]):
+                main()
+
+            out = io.StringIO()
+            with mock.patch(
+                "sys.argv",
+                ["mdkeeper", "find-concept", "kubernetes", "--db-path", str(db_path), "--format", "json"],
+            ):
+                with contextlib.redirect_stdout(out):
+                    code = main()
+
+            self.assertEqual(code, 0)
+            payload = json.loads(out.getvalue())
+            self.assertEqual(payload["count"], 1)
+
+    def test_build_index_writes_master_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
+            md_file = Path(tmp) / "doc.md"
+            md_file.write_text("# Doc", encoding="utf-8")
+            with mock.patch("sys.argv", ["mdkeeper", "scan-file", str(md_file), "--db-path", str(db_path)]):
+                main()
+
+            out_dir = Path(tmp) / "_index"
+            buf = io.StringIO()
+            with mock.patch(
+                "sys.argv",
+                ["mdkeeper", "build-index", "--db-path", str(db_path), "--output-dir", str(out_dir)],
+            ):
+                with contextlib.redirect_stdout(buf):
+                    code = main()
+
+            self.assertEqual(code, 0)
+            self.assertTrue((out_dir / "master.md").exists())
+            self.assertTrue((out_dir / "by-concept.md").exists())
+
+    def test_watch_one_iteration_indexes_existing_docs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
+            docs = Path(tmp) / "docs"
+            docs.mkdir(parents=True, exist_ok=True)
+            md_file = docs / "doc.md"
+            md_file.write_text("# Watched", encoding="utf-8")
+            cfg = Path(tmp) / "markdownkeeper.toml"
+            cfg.write_text(
+                f'[watch]\nroots=["{docs.as_posix()}"]\nextensions=[".md"]\n',
+                encoding="utf-8",
+            )
+
+            with mock.patch(
+                "sys.argv",
+                [
+                    "mdkeeper",
+                    "--config",
+                    str(cfg),
+                    "watch",
+                    "--db-path",
+                    str(db_path),
+                    "--iterations",
+                    "1",
+                    "--interval",
+                    "0.1",
+                ],
+            ):
+                code = main()
+
+            self.assertEqual(code, 0)
+            qbuf = io.StringIO()
+            with mock.patch(
+                "sys.argv",
+                ["mdkeeper", "query", "Watched", "--db-path", str(db_path), "--format", "json"],
+            ):
+                with contextlib.redirect_stdout(qbuf):
+                    main()
+            self.assertEqual(json.loads(qbuf.getvalue())["count"], 1)
+
     def test_init_db_creates_database_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / ".markdownkeeper" / "index.db"
@@ -194,6 +330,90 @@ class CliTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertTrue(db_path.exists())
             self.assertIn("Initialized database", buf.getvalue())
+
+
+    def test_watch_auto_uses_polling_when_watchdog_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
+            docs = Path(tmp) / "docs"
+            docs.mkdir(parents=True, exist_ok=True)
+            cfg = Path(tmp) / "markdownkeeper.toml"
+            cfg.write_text(f'''[watch]
+roots=["{docs.as_posix()}"]
+extensions=[".md"]
+''', encoding="utf-8")
+
+            with mock.patch("markdownkeeper.cli.main.is_watchdog_available", return_value=False), mock.patch(
+                "markdownkeeper.cli.main.watch_loop"
+            ) as watch_loop_mock:
+                watch_loop_mock.return_value.created = 0
+                watch_loop_mock.return_value.modified = 0
+                watch_loop_mock.return_value.deleted = 0
+                with mock.patch(
+                    "sys.argv",
+                    ["mdkeeper", "--config", str(cfg), "watch", "--db-path", str(db_path), "--iterations", "1"],
+                ):
+                    code = main()
+
+            self.assertEqual(code, 0)
+            watch_loop_mock.assert_called_once()
+
+    def test_watch_auto_uses_watchdog_when_available(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
+            docs = Path(tmp) / "docs"
+            docs.mkdir(parents=True, exist_ok=True)
+            cfg = Path(tmp) / "markdownkeeper.toml"
+            cfg.write_text(f'''[watch]
+roots=["{docs.as_posix()}"]
+extensions=[".md"]
+''', encoding="utf-8")
+
+            with mock.patch("markdownkeeper.cli.main.is_watchdog_available", return_value=True), mock.patch(
+                "markdownkeeper.cli.main.watch_loop_watchdog"
+            ) as watch_watchdog_mock:
+                watch_watchdog_mock.return_value.created = 0
+                watch_watchdog_mock.return_value.modified = 0
+                watch_watchdog_mock.return_value.deleted = 0
+                with mock.patch(
+                    "sys.argv",
+                    ["mdkeeper", "--config", str(cfg), "watch", "--db-path", str(db_path), "--duration", "0.1"],
+                ):
+                    code = main()
+
+            self.assertEqual(code, 0)
+            watch_watchdog_mock.assert_called_once()
+
+    def test_query_semantic_mode_outputs_mode_field(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
+            md_file = Path(tmp) / "doc.md"
+            md_file.write_text("# Semantic Search\ncluster rollout and kubernetes", encoding="utf-8")
+            with mock.patch("sys.argv", ["mdkeeper", "scan-file", str(md_file), "--db-path", str(db_path)]):
+                main()
+
+            out = io.StringIO()
+            with mock.patch(
+                "sys.argv",
+                [
+                    "mdkeeper",
+                    "query",
+                    "kubernetes",
+                    "--db-path",
+                    str(db_path),
+                    "--format",
+                    "json",
+                    "--search-mode",
+                    "semantic",
+                ],
+            ):
+                with contextlib.redirect_stdout(out):
+                    code = main()
+
+            self.assertEqual(code, 0)
+            payload = json.loads(out.getvalue())
+            self.assertEqual(payload["search_mode"], "semantic")
+            self.assertEqual(payload["count"], 1)
 
 
 if __name__ == "__main__":

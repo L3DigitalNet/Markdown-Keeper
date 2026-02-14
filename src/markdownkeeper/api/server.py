@@ -6,6 +6,12 @@ import json
 from pathlib import Path
 from typing import Any
 
+from markdownkeeper.storage.repository import (
+    find_documents_by_concept,
+    get_document,
+    search_documents,
+    semantic_search_documents,
+)
 from markdownkeeper.storage.repository import get_document, search_documents
 
 
@@ -49,6 +55,23 @@ def build_handler(database_path: Path):
             if self.path == "/api/v1/query" and method == "semantic_query":
                 query = str(params.get("query", "")).strip()
                 max_results = int(params.get("max_results", 10))
+                include_content = bool(params.get("include_content", False))
+                max_tokens = int(params.get("max_tokens", 200))
+                docs = semantic_search_documents(database_path, query, limit=max(1, max_results))
+                documents: list[dict[str, Any]] = []
+                for item in docs:
+                    payload = asdict(item)
+                    if include_content:
+                        detail = get_document(
+                            database_path,
+                            item.id,
+                            include_content=True,
+                            max_tokens=max(1, max_tokens),
+                            section=params.get("section"),
+                        )
+                        payload["content"] = detail.content if detail else ""
+                    documents.append(payload)
+
                 docs = search_documents(database_path, query, limit=max(1, max_results))
                 self._write_json(
                     200,
@@ -56,6 +79,7 @@ def build_handler(database_path: Path):
                         request_id,
                         {
                             "query": query,
+                            "documents": documents,
                             "documents": [asdict(item) for item in docs],
                             "count": len(docs),
                         },
@@ -65,6 +89,13 @@ def build_handler(database_path: Path):
 
             if self.path == "/api/v1/get_doc" and method == "get_document":
                 document_id = int(params.get("document_id", 0))
+                doc = get_document(
+                    database_path,
+                    document_id,
+                    include_content=bool(params.get("include_content", False)),
+                    max_tokens=int(params.get("max_tokens", 200)),
+                    section=params.get("section"),
+                )
                 doc = get_document(database_path, document_id)
                 if doc is None:
                     self._write_json(404, _rpc_error(request_id, -32004, "document not found"))
