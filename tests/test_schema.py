@@ -44,6 +44,7 @@ class SchemaTests(unittest.TestCase):
                 "query_cache",
             }.issubset(tables)
         )
+        self.assertTrue({"documents", "headings", "links", "events"}.issubset(tables))
 
     def test_initialize_database_creates_indexes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -66,6 +67,8 @@ class SchemaTests(unittest.TestCase):
                 "idx_links_document_id",
                 "idx_chunks_document_id",
                 "idx_query_cache_hash",
+                "idx_headings_document_id",
+                "idx_links_document_id",
             }.issubset(indexes)
         )
 

@@ -33,6 +33,9 @@ class ParsedDocument:
     tags: list[str]
     category: str | None
     concepts: list[str]
+    headings: list[ParsedHeading]
+    links: list[ParsedLink]
+    frontmatter: dict[str, Any]
 
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
@@ -149,4 +152,7 @@ def parse_markdown(text: str) -> ParsedDocument:
         tags=tags,
         category=str(category) if category else None,
         concepts=concepts,
+        headings=headings,
+        links=links,
+        frontmatter=frontmatter,
     )

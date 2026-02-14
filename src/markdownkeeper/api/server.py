@@ -12,6 +12,7 @@ from markdownkeeper.storage.repository import (
     search_documents,
     semantic_search_documents,
 )
+from markdownkeeper.storage.repository import get_document, search_documents
 
 
 def _rpc_success(request_id: Any, result: dict[str, Any]) -> dict[str, Any]:
@@ -71,6 +72,7 @@ def build_handler(database_path: Path):
                         payload["content"] = detail.content if detail else ""
                     documents.append(payload)
 
+                docs = search_documents(database_path, query, limit=max(1, max_results))
                 self._write_json(
                     200,
                     _rpc_success(
@@ -78,6 +80,7 @@ def build_handler(database_path: Path):
                         {
                             "query": query,
                             "documents": documents,
+                            "documents": [asdict(item) for item in docs],
                             "count": len(docs),
                         },
                     ),
@@ -93,6 +96,7 @@ def build_handler(database_path: Path):
                     max_tokens=int(params.get("max_tokens", 200)),
                     section=params.get("section"),
                 )
+                doc = get_document(database_path, document_id)
                 if doc is None:
                     self._write_json(404, _rpc_error(request_id, -32004, "document not found"))
                 else:

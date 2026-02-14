@@ -9,6 +9,10 @@ import sqlite3
 
 from markdownkeeper.processor.parser import ParsedDocument
 from markdownkeeper.query.embeddings import compute_embedding, cosine_similarity
+import re
+import sqlite3
+
+from markdownkeeper.processor.parser import ParsedDocument
 
 
 @dataclass(slots=True)
@@ -77,6 +81,11 @@ def upsert_document(database_path: Path, file_path: Path, parsed: ParsedDocument
               summary=excluded.summary,
               category=excluded.category,
               content=excluded.content,
+            INSERT INTO documents(path, title, summary, content_hash, token_estimate, updated_at, processed_at)
+            VALUES(?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(path) DO UPDATE SET
+              title=excluded.title,
+              summary=excluded.summary,
               content_hash=excluded.content_hash,
               token_estimate=excluded.token_estimate,
               updated_at=excluded.updated_at,
@@ -239,6 +248,9 @@ def _cosine_similarity(left: list[float], right: list[float]) -> float:
     return cosine_similarity(left, right)
 
 
+    return {token for token in re.findall(r"[a-z0-9]+", text.lower()) if len(token) > 1}
+
+
 def _fetch_cache(connection: sqlite3.Connection, query_hash: str) -> list[int] | None:
     row = connection.execute(
         "SELECT id, result_json FROM query_cache WHERE query_hash = ?",
@@ -306,6 +318,11 @@ def semantic_search_documents(database_path: Path, query: str, limit: int = 10) 
         ).fetchall()
 
         query_embedding, _ = compute_embedding(cleaned)
+            SELECT id, path, title, summary, category, token_estimate, updated_at, content
+            FROM documents
+            """
+        ).fetchall()
+
         scored: list[tuple[float, tuple[object, ...]]] = []
         for row in rows:
             haystack = " ".join(
@@ -332,6 +349,12 @@ def semantic_search_documents(database_path: Path, query: str, limit: int = 10) 
             score = (0.7 * vector_score) + (0.3 * lexical_score)
             if score <= 0.0:
                 continue
+            if not tokens:
+                continue
+            overlap = len(query_tokens & tokens)
+            if overlap == 0:
+                continue
+            score = overlap / max(1, len(query_tokens))
             scored.append((score, row[:7]))
 
         scored.sort(key=lambda item: (item[0], str(item[1][6])), reverse=True)
@@ -396,6 +419,7 @@ def search_documents(database_path: Path, query: str, limit: int = 10) -> list[D
         rows = connection.execute(
             """
             SELECT id, path, title, summary, category, token_estimate, updated_at
+            SELECT id, path, title, summary, token_estimate, updated_at
             FROM documents
             WHERE title LIKE ? OR summary LIKE ? OR path LIKE ?
             ORDER BY updated_at DESC
@@ -485,6 +509,24 @@ def get_document(
         doc = connection.execute(
             """
             SELECT id, path, title, summary, category, token_estimate, updated_at
+    return [
+        DocumentRecord(
+            id=int(row[0]),
+            path=str(row[1]),
+            title=str(row[2] or ""),
+            summary=str(row[3] or ""),
+            token_estimate=int(row[4] or 0),
+            updated_at=str(row[5] or ""),
+        )
+        for row in rows
+    ]
+
+
+def get_document(database_path: Path, document_id: int) -> DocumentDetail | None:
+    with sqlite3.connect(database_path) as connection:
+        doc = connection.execute(
+            """
+            SELECT id, path, title, summary, token_estimate, updated_at
             FROM documents
             WHERE id = ?
             """,
@@ -542,6 +584,8 @@ def get_document(
         category=str(doc[4] or ""),
         token_estimate=int(doc[5] or 0),
         updated_at=str(doc[6] or ""),
+        token_estimate=int(doc[4] or 0),
+        updated_at=str(doc[5] or ""),
         headings=[
             {
                 "level": int(row[0]),

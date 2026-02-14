@@ -12,6 +12,7 @@ import tempfile
 import unittest
 
 from markdownkeeper.indexer.generator import generate_all_indexes
+from markdownkeeper.indexer.generator import generate_master_index
 from markdownkeeper.processor.parser import parse_markdown
 from markdownkeeper.storage.repository import upsert_document
 from markdownkeeper.storage.schema import initialize_database
@@ -19,6 +20,7 @@ from markdownkeeper.storage.schema import initialize_database
 
 class IndexerTests(unittest.TestCase):
     def test_generate_indexes_write_expected_files(self) -> None:
+    def test_generate_master_index_writes_document_listing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             db = root / ".markdownkeeper" / "index.db"
@@ -37,6 +39,13 @@ class IndexerTests(unittest.TestCase):
             self.assertTrue((root / "_index" / "by-category.md").exists())
             self.assertTrue((root / "_index" / "by-tag.md").exists())
             self.assertTrue((root / "_index" / "by-concept.md").exists())
+            doc.write_text("# Alpha\nbody", encoding="utf-8")
+            upsert_document(db, doc, parse_markdown(doc.read_text(encoding="utf-8")))
+
+            out = generate_master_index(db, root / "_index")
+            content = out.read_text(encoding="utf-8")
+            self.assertIn("MarkdownKeeper Master Index", content)
+            self.assertIn("Alpha", content)
 
 
 if __name__ == "__main__":

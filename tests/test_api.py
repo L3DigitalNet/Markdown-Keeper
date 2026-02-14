@@ -24,12 +24,14 @@ from markdownkeeper.storage.schema import initialize_database
 
 class ApiTests(unittest.TestCase):
     def test_query_get_doc_and_find_concept_endpoints(self) -> None:
+    def test_query_and_get_doc_endpoints(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             db = root / ".markdownkeeper" / "index.db"
             initialize_database(db)
             doc = root / "doc.md"
             doc.write_text("---\nconcepts: kubernetes\n---\n# API Doc\nhello", encoding="utf-8")
+            doc.write_text("# API Doc\nhello", encoding="utf-8")
             doc_id = upsert_document(db, doc, parse_markdown(doc.read_text(encoding="utf-8")))
 
             server = ThreadingHTTPServer(("127.0.0.1", 0), build_handler(db))
@@ -44,6 +46,7 @@ class ApiTests(unittest.TestCase):
                             "jsonrpc": "2.0",
                             "method": "semantic_query",
                             "params": {"query": "API", "max_results": 5, "include_content": True, "max_tokens": 20},
+                            "params": {"query": "API", "max_results": 5},
                             "id": 1,
                         }
                     ).encode("utf-8"),
@@ -62,6 +65,7 @@ class ApiTests(unittest.TestCase):
                             "jsonrpc": "2.0",
                             "method": "get_document",
                             "params": {"document_id": doc_id, "include_content": True, "max_tokens": 20},
+                            "params": {"document_id": doc_id},
                             "id": 2,
                         }
                     ).encode("utf-8"),
