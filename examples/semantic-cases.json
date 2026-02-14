@@ -1,0 +1,6 @@
+[
+  {
+    "query": "kubernetes installation guide",
+    "expected_ids": [1]
+  }
+]
