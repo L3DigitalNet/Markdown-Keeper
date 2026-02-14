@@ -78,3 +78,11 @@ def status_background(pid_file: Path) -> tuple[bool, int | None]:
 def restart_background(command: list[str], pid_file: Path, timeout_s: float = 5.0) -> int:
     stop_background(pid_file, timeout_s=timeout_s)
     return start_background(command, pid_file)
+
+
+def reload_background(pid_file: Path) -> bool:
+    pid = _read_pid(pid_file)
+    if pid is None or not _is_pid_running(pid):
+        return False
+    os.kill(pid, signal.SIGHUP)
+    return True

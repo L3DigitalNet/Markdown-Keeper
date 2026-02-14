@@ -6,13 +6,11 @@ from pathlib import Path
 import hashlib
 import json
 import sqlite3
+import statistics
+import time
 
 from markdownkeeper.processor.parser import ParsedDocument
-from markdownkeeper.query.embeddings import compute_embedding, cosine_similarity
-import re
-import sqlite3
-
-from markdownkeeper.processor.parser import ParsedDocument
+from markdownkeeper.query.embeddings import compute_embedding, cosine_similarity, is_model_embedding_available
 
 
 @dataclass(slots=True)
@@ -68,6 +66,19 @@ def _chunk_document(parsed: ParsedDocument, max_words: int = 120) -> list[tuple[
     return chunks
 
 
+def _deserialize_embedding(raw: object) -> list[float]:
+    if raw is None:
+        return []
+    try:
+        payload = json.loads(str(raw))
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return []
+    try:
+        return [float(item) for item in payload]
+    except (ValueError, TypeError):
+        return []
+
+
 def upsert_document(database_path: Path, file_path: Path, parsed: ParsedDocument) -> int:
     with sqlite3.connect(database_path) as connection:
         connection.execute("PRAGMA foreign_keys = ON;")
@@ -81,11 +92,6 @@ def upsert_document(database_path: Path, file_path: Path, parsed: ParsedDocument
               summary=excluded.summary,
               category=excluded.category,
               content=excluded.content,
-            INSERT INTO documents(path, title, summary, content_hash, token_estimate, updated_at, processed_at)
-            VALUES(?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(path) DO UPDATE SET
-              title=excluded.title,
-              summary=excluded.summary,
               content_hash=excluded.content_hash,
               token_estimate=excluded.token_estimate,
               updated_at=excluded.updated_at,
@@ -151,12 +157,19 @@ def upsert_document(database_path: Path, file_path: Path, parsed: ParsedDocument
             )
 
         chunks = _chunk_document(parsed)
+        chunk_rows: list[tuple[int, int, str, str, int, str]] = []
+        for idx, heading_path, content, token_count in chunks:
+            chunk_embedding, _ = compute_embedding(content)
+            chunk_rows.append(
+                (document_id, idx, heading_path, content, token_count, json.dumps(chunk_embedding))
+            )
+
         connection.executemany(
             """
-            INSERT INTO document_chunks(document_id, chunk_index, heading_path, content, token_count)
-            VALUES(?, ?, ?, ?, ?)
+            INSERT INTO document_chunks(document_id, chunk_index, heading_path, content, token_count, embedding)
+            VALUES(?, ?, ?, ?, ?, ?)
             """,
-            [(document_id, idx, heading_path, content, token_count) for idx, heading_path, content, token_count in chunks],
+            chunk_rows,
         )
 
         embedding_source = " ".join(
@@ -248,9 +261,6 @@ def _cosine_similarity(left: list[float], right: list[float]) -> float:
     return cosine_similarity(left, right)
 
 
-    return {token for token in re.findall(r"[a-z0-9]+", text.lower()) if len(token) > 1}
-
-
 def _fetch_cache(connection: sqlite3.Connection, query_hash: str) -> list[int] | None:
     row = connection.execute(
         "SELECT id, result_json FROM query_cache WHERE query_hash = ?",
@@ -318,13 +328,9 @@ def semantic_search_documents(database_path: Path, query: str, limit: int = 10) 
         ).fetchall()
 
         query_embedding, _ = compute_embedding(cleaned)
-            SELECT id, path, title, summary, category, token_estimate, updated_at, content
-            FROM documents
-            """
-        ).fetchall()
-
         scored: list[tuple[float, tuple[object, ...]]] = []
         for row in rows:
+            document_id = int(row[0])
             haystack = " ".join(
                 [
                     str(row[1] or ""),
@@ -337,24 +343,47 @@ def semantic_search_documents(database_path: Path, query: str, limit: int = 10) 
             overlap = len(query_tokens & tokens)
             lexical_score = overlap / max(1, len(query_tokens)) if overlap > 0 else 0.0
 
-            vector_score = 0.0
-            embedding_raw = row[8]
-            if embedding_raw:
-                try:
-                    vector = [float(value) for value in json.loads(str(embedding_raw))]
-                    vector_score = cosine_similarity(query_embedding, vector)
-                except (ValueError, json.JSONDecodeError, TypeError):
-                    vector_score = 0.0
+            vector_score = cosine_similarity(query_embedding, _deserialize_embedding(row[8]))
 
-            score = (0.7 * vector_score) + (0.3 * lexical_score)
+            chunk_rows = connection.execute(
+                """
+                SELECT embedding
+                FROM document_chunks
+                WHERE document_id = ?
+                ORDER BY chunk_index ASC
+                """,
+                (document_id,),
+            ).fetchall()
+            chunk_scores = [
+                cosine_similarity(query_embedding, _deserialize_embedding(chunk_row[0]))
+                for chunk_row in chunk_rows
+                if chunk_row[0] is not None
+            ]
+            chunk_score = max(chunk_scores) if chunk_scores else 0.0
+
+            concept_rows = connection.execute(
+                """
+                SELECT c.name
+                FROM concepts c
+                JOIN document_concepts dc ON dc.concept_id = c.id
+                WHERE dc.document_id = ?
+                """,
+                (document_id,),
+            ).fetchall()
+            concepts = {str(item[0]) for item in concept_rows}
+            concept_score = 1.0 if query_tokens & concepts else 0.0
+
+            freshness_bonus = 0.05 if str(row[6]).startswith(str(datetime.now(tz=timezone.utc).year)) else 0.0
+
+            score = (
+                (0.45 * vector_score)
+                + (0.30 * chunk_score)
+                + (0.20 * lexical_score)
+                + (0.05 * concept_score)
+                + freshness_bonus
+            )
             if score <= 0.0:
                 continue
-            if not tokens:
-                continue
-            overlap = len(query_tokens & tokens)
-            if overlap == 0:
-                continue
-            score = overlap / max(1, len(query_tokens))
             scored.append((score, row[:7]))
 
         scored.sort(key=lambda item: (item[0], str(item[1][6])), reverse=True)
@@ -404,7 +433,7 @@ def regenerate_embeddings(database_path: Path, model_name: str = "all-MiniLM-L6-
         return updated
 
 
-def embedding_coverage(database_path: Path) -> dict[str, int]:
+def embedding_coverage(database_path: Path, model_name: str = "all-MiniLM-L6-v2") -> dict[str, int | bool]:
     with sqlite3.connect(database_path) as connection:
         total = int(connection.execute("SELECT COUNT(*) FROM documents").fetchone()[0])
         embedded = int(
@@ -412,14 +441,139 @@ def embedding_coverage(database_path: Path) -> dict[str, int]:
                 "SELECT COUNT(*) FROM embeddings WHERE embedding IS NOT NULL AND LENGTH(TRIM(embedding)) > 0"
             ).fetchone()[0]
         )
-    return {"documents": total, "embedded": embedded, "missing": max(0, total - embedded)}
+        chunk_total = int(connection.execute("SELECT COUNT(*) FROM document_chunks").fetchone()[0])
+        chunk_embedded = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM document_chunks WHERE embedding IS NOT NULL AND LENGTH(TRIM(embedding)) > 0"
+            ).fetchone()[0]
+        )
+    return {
+        "documents": total,
+        "embedded": embedded,
+        "missing": max(0, total - embedded),
+        "chunks": chunk_total,
+        "chunk_embedded": chunk_embedded,
+        "chunk_missing": max(0, chunk_total - chunk_embedded),
+        "model_available": is_model_embedding_available(model_name),
+    }
+
+
+def evaluate_semantic_precision(
+    database_path: Path,
+    cases: list[dict[str, object]],
+    k: int = 5,
+) -> dict[str, object]:
+    if not cases:
+        return {"cases": 0, "k": k, "precision_at_k": 0.0, "details": []}
+
+    details: list[dict[str, object]] = []
+    total_hits = 0.0
+    for case in cases:
+        query = str(case.get("query", "")).strip()
+        expected = {int(item) for item in case.get("expected_ids", []) if str(item).isdigit()}
+        results = semantic_search_documents(database_path, query, limit=max(1, k))
+        got_ids = [item.id for item in results[:k]]
+        hits = len(expected & set(got_ids))
+        precision = hits / max(1, k)
+        total_hits += precision
+        details.append(
+            {
+                "query": query,
+                "expected_ids": sorted(expected),
+                "result_ids": got_ids,
+                "precision_at_k": precision,
+            }
+        )
+
+    return {
+        "cases": len(cases),
+        "k": k,
+        "precision_at_k": total_hits / len(cases),
+        "details": details,
+    }
+
+
+def system_stats(database_path: Path, model_name: str = "all-MiniLM-L6-v2") -> dict[str, object]:
+    coverage = embedding_coverage(database_path, model_name=model_name)
+    with sqlite3.connect(database_path) as connection:
+        queued = int(connection.execute("SELECT COUNT(*) FROM events WHERE status='queued'").fetchone()[0])
+        failed = int(connection.execute("SELECT COUNT(*) FROM events WHERE status='failed'").fetchone()[0])
+        oldest = connection.execute(
+            "SELECT created_at FROM events WHERE status='queued' ORDER BY created_at ASC LIMIT 1"
+        ).fetchone()
+        docs = int(connection.execute("SELECT COUNT(*) FROM documents").fetchone()[0])
+        links = int(connection.execute("SELECT COUNT(*) FROM links").fetchone()[0])
+
+    queue_lag_seconds = 0.0
+    if oldest and oldest[0]:
+        try:
+            created_ts = datetime.fromisoformat(str(oldest[0])).timestamp()
+            queue_lag_seconds = max(0.0, time.time() - created_ts)
+        except ValueError:
+            queue_lag_seconds = 0.0
+
+    return {
+        "documents": docs,
+        "links": links,
+        "queue": {"queued": queued, "failed": failed, "lag_seconds": round(queue_lag_seconds, 3)},
+        "embeddings": coverage,
+    }
+
+
+def benchmark_semantic_queries(
+    database_path: Path,
+    cases: list[dict[str, object]],
+    k: int = 5,
+    iterations: int = 1,
+) -> dict[str, object]:
+    if not cases:
+        return {
+            "cases": 0,
+            "iterations": max(1, iterations),
+            "k": max(1, k),
+            "precision_at_k": 0.0,
+            "latency_ms": {"avg": 0.0, "p50": 0.0, "p95": 0.0, "max": 0.0},
+        }
+
+    k = max(1, int(k))
+    iterations = max(1, int(iterations))
+    latencies_ms: list[float] = []
+
+    for _ in range(iterations):
+        for case in cases:
+            query = str(case.get("query", "")).strip()
+            start = time.perf_counter()
+            semantic_search_documents(database_path, query, limit=k)
+            elapsed_ms = (time.perf_counter() - start) * 1000.0
+            latencies_ms.append(elapsed_ms)
+
+    precision_report = evaluate_semantic_precision(database_path, cases, k=k)
+
+    sorted_lat = sorted(latencies_ms)
+    p50 = statistics.median(sorted_lat)
+    p95_index = min(len(sorted_lat) - 1, int(round(0.95 * (len(sorted_lat) - 1))))
+    p95 = sorted_lat[p95_index]
+
+    return {
+        "cases": len(cases),
+        "iterations": iterations,
+        "k": k,
+        "precision_at_k": float(precision_report["precision_at_k"]),
+        "latency_ms": {
+            "avg": round(sum(sorted_lat) / len(sorted_lat), 3),
+            "p50": round(p50, 3),
+            "p95": round(p95, 3),
+            "max": round(max(sorted_lat), 3),
+        },
+    }
+
+
 def search_documents(database_path: Path, query: str, limit: int = 10) -> list[DocumentRecord]:
     pattern = f"%{query.strip()}%"
     with sqlite3.connect(database_path) as connection:
         rows = connection.execute(
             """
             SELECT id, path, title, summary, category, token_estimate, updated_at
-            SELECT id, path, title, summary, token_estimate, updated_at
             FROM documents
             WHERE title LIKE ? OR summary LIKE ? OR path LIKE ?
             ORDER BY updated_at DESC
@@ -509,24 +663,6 @@ def get_document(
         doc = connection.execute(
             """
             SELECT id, path, title, summary, category, token_estimate, updated_at
-    return [
-        DocumentRecord(
-            id=int(row[0]),
-            path=str(row[1]),
-            title=str(row[2] or ""),
-            summary=str(row[3] or ""),
-            token_estimate=int(row[4] or 0),
-            updated_at=str(row[5] or ""),
-        )
-        for row in rows
-    ]
-
-
-def get_document(database_path: Path, document_id: int) -> DocumentDetail | None:
-    with sqlite3.connect(database_path) as connection:
-        doc = connection.execute(
-            """
-            SELECT id, path, title, summary, token_estimate, updated_at
             FROM documents
             WHERE id = ?
             """,
@@ -584,8 +720,6 @@ def get_document(database_path: Path, document_id: int) -> DocumentDetail | None
         category=str(doc[4] or ""),
         token_estimate=int(doc[5] or 0),
         updated_at=str(doc[6] or ""),
-        token_estimate=int(doc[4] or 0),
-        updated_at=str(doc[5] or ""),
         headings=[
             {
                 "level": int(row[0]),

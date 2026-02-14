@@ -20,14 +20,13 @@ from markdownkeeper.storage.repository import (
     search_documents,
     _compute_text_embedding,
     embedding_coverage,
+    benchmark_semantic_queries,
+    evaluate_semantic_precision,
     regenerate_embeddings,
     semantic_search_documents,
+    system_stats,
     upsert_document,
 )
-    semantic_search_documents,
-    upsert_document,
-)
-from markdownkeeper.storage.repository import get_document, search_documents, upsert_document
 from markdownkeeper.storage.schema import initialize_database
 
 
@@ -41,8 +40,6 @@ class RepositoryTests(unittest.TestCase):
 
             doc1 = parse_markdown("---\ntags: x\ncategory: guides\n---\n# A\nSee [x](./x.md)")
             doc2 = parse_markdown("---\ntags: y\ncategory: runbooks\n---\n# A2\nSee [y](https://example.com)\n## B")
-            doc1 = parse_markdown("# A\nSee [x](./x.md)")
-            doc2 = parse_markdown("# A2\nSee [y](https://example.com)\n## B")
 
             id1 = upsert_document(db_path, file_path, doc1)
             id2 = upsert_document(db_path, file_path, doc2)
@@ -86,10 +83,6 @@ class RepositoryTests(unittest.TestCase):
             doc_id = upsert_document(db_path, file_path, parsed)
 
             detail = get_document(db_path, doc_id, include_content=True, max_tokens=50)
-            parsed = parse_markdown("# Guide\nSee [ext](https://example.com)")
-            doc_id = upsert_document(db_path, file_path, parsed)
-
-            detail = get_document(db_path, doc_id)
             self.assertIsNotNone(detail)
             assert detail is not None
             self.assertEqual(detail.id, doc_id)
@@ -99,7 +92,6 @@ class RepositoryTests(unittest.TestCase):
             self.assertIn("docker", detail.concepts)
             self.assertEqual(len(detail.links), 1)
             self.assertTrue(len(detail.content) > 0)
-            self.assertEqual(len(detail.links), 1)
 
             missing = get_document(db_path, 9999)
             self.assertIsNone(missing)
@@ -221,6 +213,57 @@ class RepositoryTests(unittest.TestCase):
             self.assertEqual(regenerated, 1)
             coverage_after = embedding_coverage(db_path)
             self.assertEqual(coverage_after["missing"], 0)
+
+
+    def test_evaluate_semantic_precision_returns_scores(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
+            initialize_database(db_path)
+            file_path = Path(tmp) / "q.md"
+            parsed = parse_markdown("# Kubernetes Guide\ncluster rollout")
+            doc_id = upsert_document(db_path, file_path, parsed)
+
+            report = evaluate_semantic_precision(
+                db_path,
+                [{"query": "kubernetes cluster", "expected_ids": [doc_id]}],
+                k=1,
+            )
+            self.assertEqual(report["cases"], 1)
+            self.assertGreaterEqual(float(report["precision_at_k"]), 1.0)
+
+
+    def test_system_stats_contains_queue_and_embedding_sections(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
+            initialize_database(db_path)
+            file_path = Path(tmp) / "stats.md"
+            parsed = parse_markdown("# Stats\nbody")
+            upsert_document(db_path, file_path, parsed)
+
+            payload = system_stats(db_path)
+            self.assertIn("documents", payload)
+            self.assertIn("queue", payload)
+            self.assertIn("embeddings", payload)
+
+
+    def test_benchmark_semantic_queries_reports_latency_and_precision(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
+            initialize_database(db_path)
+            file_path = Path(tmp) / "bench.md"
+            parsed = parse_markdown("# Benchmark\nsemantic benchmark case")
+            doc_id = upsert_document(db_path, file_path, parsed)
+
+            report = benchmark_semantic_queries(
+                db_path,
+                [{"query": "semantic benchmark", "expected_ids": [doc_id]}],
+                k=1,
+                iterations=2,
+            )
+            self.assertEqual(report["cases"], 1)
+            self.assertEqual(report["iterations"], 2)
+            self.assertIn("latency_ms", report)
+            self.assertGreaterEqual(float(report["precision_at_k"]), 1.0)
 
 if __name__ == "__main__":
     unittest.main()

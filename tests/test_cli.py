@@ -474,6 +474,121 @@ extensions=[".md"]
             self.assertEqual(payload["documents"], 1)
             self.assertEqual(payload["missing"], 0)
 
+
+    def test_embeddings_eval_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
+            md_file = Path(tmp) / "eval.md"
+            md_file.write_text("# Kubernetes Notes\ncluster setup", encoding="utf-8")
+
+            with mock.patch("sys.argv", ["mdkeeper", "scan-file", str(md_file), "--db-path", str(db_path)]):
+                main()
+
+            query_buf = io.StringIO()
+            with mock.patch(
+                "sys.argv",
+                ["mdkeeper", "query", "kubernetes", "--db-path", str(db_path), "--format", "json"],
+            ):
+                with contextlib.redirect_stdout(query_buf):
+                    main()
+            doc_id = int(json.loads(query_buf.getvalue())["documents"][0]["id"])
+
+            cases_file = Path(tmp) / "cases.json"
+            cases_file.write_text(
+                json.dumps([{"query": "kubernetes", "expected_ids": [doc_id]}]),
+                encoding="utf-8",
+            )
+
+            out = io.StringIO()
+            with mock.patch(
+                "sys.argv",
+                [
+                    "mdkeeper",
+                    "embeddings-eval",
+                    str(cases_file),
+                    "--db-path",
+                    str(db_path),
+                    "--k",
+                    "1",
+                    "--format",
+                    "json",
+                ],
+            ):
+                with contextlib.redirect_stdout(out):
+                    code = main()
+
+            self.assertEqual(code, 0)
+            payload = json.loads(out.getvalue())
+            self.assertEqual(payload["cases"], 1)
+            self.assertGreaterEqual(float(payload["precision_at_k"]), 1.0)
+
+
+    def test_semantic_benchmark_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
+            md_file = Path(tmp) / "bench.md"
+            md_file.write_text("# Bench\nsemantic benchmark", encoding="utf-8")
+            with mock.patch("sys.argv", ["mdkeeper", "scan-file", str(md_file), "--db-path", str(db_path)]):
+                main()
+
+            query_buf = io.StringIO()
+            with mock.patch(
+                "sys.argv",
+                ["mdkeeper", "query", "semantic", "--db-path", str(db_path), "--format", "json"],
+            ):
+                with contextlib.redirect_stdout(query_buf):
+                    main()
+            doc_id = int(json.loads(query_buf.getvalue())["documents"][0]["id"])
+
+            cases_file = Path(tmp) / "benchmark-cases.json"
+            cases_file.write_text(
+                json.dumps([{"query": "semantic", "expected_ids": [doc_id]}]),
+                encoding="utf-8",
+            )
+
+            out = io.StringIO()
+            with mock.patch(
+                "sys.argv",
+                [
+                    "mdkeeper",
+                    "semantic-benchmark",
+                    str(cases_file),
+                    "--db-path",
+                    str(db_path),
+                    "--k",
+                    "1",
+                    "--iterations",
+                    "2",
+                    "--format",
+                    "json",
+                ],
+            ):
+                with contextlib.redirect_stdout(out):
+                    code = main()
+            self.assertEqual(code, 0)
+            payload = json.loads(out.getvalue())
+            self.assertEqual(payload["cases"], 1)
+            self.assertEqual(payload["iterations"], 2)
+            self.assertIn("latency_ms", payload)
+
+    def test_stats_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
+            md_file = Path(tmp) / "stats.md"
+            md_file.write_text("# Stats\nhello", encoding="utf-8")
+            with mock.patch("sys.argv", ["mdkeeper", "scan-file", str(md_file), "--db-path", str(db_path)]):
+                main()
+
+            out = io.StringIO()
+            with mock.patch("sys.argv", ["mdkeeper", "stats", "--db-path", str(db_path), "--format", "json"]):
+                with contextlib.redirect_stdout(out):
+                    code = main()
+            self.assertEqual(code, 0)
+            payload = json.loads(out.getvalue())
+            self.assertIn("documents", payload)
+            self.assertIn("queue", payload)
+            self.assertIn("embeddings", payload)
+
     def test_daemon_commands_use_pid_file_and_exit_codes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             pid_file = Path(tmp) / "watch.pid"
@@ -522,6 +637,18 @@ extensions=[".md"]
                 self.assertEqual(code, 0)
                 self.assertIn("Restarted", out.getvalue())
                 restart_mock.assert_called_once()
+
+            with mock.patch("markdownkeeper.cli.main.reload_background", return_value=True) as reload_mock:
+                out = io.StringIO()
+                with mock.patch(
+                    "sys.argv",
+                    ["mdkeeper", "daemon-reload", "watch", "--pid-file", str(pid_file)],
+                ):
+                    with contextlib.redirect_stdout(out):
+                        code = main()
+                self.assertEqual(code, 0)
+                self.assertIn("Reloaded", out.getvalue())
+                reload_mock.assert_called_once()
 
             with mock.patch("markdownkeeper.cli.main.status_background", return_value=(False, None)):
                 with mock.patch(

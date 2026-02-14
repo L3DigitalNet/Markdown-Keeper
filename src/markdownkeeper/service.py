@@ -17,10 +17,20 @@ After=network.target
 
 [Service]
 Type=simple
+User=markdownkeeper
+Group=markdownkeeper
+WorkingDirectory=/var/lib/markdownkeeper
 ExecStart={exec_path} --config {config_path} watch --mode auto
-ExecReload={exec_path} --config {config_path} daemon-restart watch
+ExecReload={exec_path} --config {config_path} daemon-reload watch
 Restart=on-failure
 RestartSec=5
+RuntimeDirectory=markdownkeeper
+RuntimeDirectoryMode=0755
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/markdownkeeper /var/log/markdownkeeper
 
 [Install]
 WantedBy=multi-user.target
@@ -35,10 +45,18 @@ Requires=markdownkeeper.service
 
 [Service]
 Type=simple
+User=markdownkeeper
+Group=markdownkeeper
+WorkingDirectory=/var/lib/markdownkeeper
 ExecStart={exec_path} --config {config_path} serve-api
-ExecReload={exec_path} --config {config_path} daemon-restart api
+ExecReload={exec_path} --config {config_path} daemon-reload api
 Restart=on-failure
 RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/markdownkeeper /var/log/markdownkeeper
 
 [Install]
 WantedBy=multi-user.target

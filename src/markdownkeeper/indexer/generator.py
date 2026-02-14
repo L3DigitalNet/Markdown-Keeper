@@ -13,8 +13,6 @@ def _write(path: Path, lines: list[str]) -> Path:
 
 
 def generate_master_index(database_path: Path, output_dir: Path) -> Path:
-def generate_master_index(database_path: Path, output_dir: Path) -> Path:
-    output_dir.mkdir(parents=True, exist_ok=True)
     out = output_dir / "master.md"
     docs = list_documents(database_path)
 
@@ -111,5 +109,3 @@ def generate_all_indexes(database_path: Path, output_dir: Path) -> list[Path]:
         generate_tag_index(database_path, output_dir),
         generate_concept_index(database_path, output_dir),
     ]
-    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return out

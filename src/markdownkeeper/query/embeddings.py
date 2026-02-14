@@ -6,6 +6,9 @@ import re
 from typing import Iterable
 
 
+_MODEL_CACHE: dict[str, object] = {}
+
+
 def _tokenize(text: str) -> set[str]:
     return {token for token in re.findall(r"[a-z0-9]+", text.lower()) if len(token) > 1}
 
@@ -31,15 +34,31 @@ def _normalize(vector: Iterable[float]) -> list[float]:
     return [value / norm for value in values]
 
 
-def compute_embedding(text: str, model_name: str = "all-MiniLM-L6-v2") -> tuple[list[float], str]:
-    """Compute an embedding using sentence-transformers when available; fallback to hash baseline."""
+def _load_model(model_name: str) -> object | None:
+    if model_name in _MODEL_CACHE:
+        return _MODEL_CACHE[model_name]
+
     try:
         from sentence_transformers import SentenceTransformer  # type: ignore
+
+        model = SentenceTransformer(model_name)
+        _MODEL_CACHE[model_name] = model
+        return model
     except Exception:
+        return None
+
+
+def is_model_embedding_available(model_name: str = "all-MiniLM-L6-v2") -> bool:
+    return _load_model(model_name) is not None
+
+
+def compute_embedding(text: str, model_name: str = "all-MiniLM-L6-v2") -> tuple[list[float], str]:
+    """Compute an embedding using sentence-transformers when available; fallback to hash baseline."""
+    model = _load_model(model_name)
+    if model is None:
         return _hash_embedding(text), "token-hash-v1"
 
     try:
-        model = SentenceTransformer(model_name)
         vector = model.encode(text or "", normalize_embeddings=True)
         return _normalize(vector), model_name
     except Exception:

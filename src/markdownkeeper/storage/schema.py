@@ -80,6 +80,7 @@ SCHEMA_STATEMENTS = [
         heading_path TEXT,
         content TEXT NOT NULL,
         token_count INTEGER NOT NULL,
+        embedding TEXT,
         FOREIGN KEY(document_id) REFERENCES documents(id) ON DELETE CASCADE
     )
     """,
@@ -109,7 +110,10 @@ SCHEMA_STATEMENTS = [
         event_type TEXT NOT NULL,
         path TEXT NOT NULL,
         created_at TEXT NOT NULL,
-        status TEXT DEFAULT 'queued'
+        updated_at TEXT,
+        status TEXT DEFAULT 'queued',
+        attempts INTEGER DEFAULT 0,
+        last_error TEXT
     )
     """,
     """
@@ -130,6 +134,9 @@ SCHEMA_STATEMENTS = [
     """
     CREATE INDEX IF NOT EXISTS idx_query_cache_hash ON query_cache(query_hash)
     """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_events_status_created ON events(status, created_at)
+    """,
 ]
 
 
@@ -148,5 +155,27 @@ def initialize_database(database_path: Path) -> None:
             connection.execute("ALTER TABLE documents ADD COLUMN category TEXT")
         if "content" not in columns:
             connection.execute("ALTER TABLE documents ADD COLUMN content TEXT")
+
+        chunk_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(document_chunks)").fetchall()
+        }
+        if "embedding" not in chunk_columns:
+            connection.execute("ALTER TABLE document_chunks ADD COLUMN embedding TEXT")
+
+        event_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(events)").fetchall()
+        }
+        if "updated_at" not in event_columns:
+            connection.execute("ALTER TABLE events ADD COLUMN updated_at TEXT")
+        if "attempts" not in event_columns:
+            connection.execute("ALTER TABLE events ADD COLUMN attempts INTEGER DEFAULT 0")
+        if "last_error" not in event_columns:
+            connection.execute("ALTER TABLE events ADD COLUMN last_error TEXT")
+
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_events_status_created ON events(status, created_at)"
+        )
 
         connection.commit()

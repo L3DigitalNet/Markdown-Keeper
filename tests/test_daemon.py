@@ -13,7 +13,7 @@ import time
 import unittest
 import warnings
 
-from markdownkeeper.daemon import restart_background, start_background, status_background, stop_background
+from markdownkeeper.daemon import reload_background, restart_background, start_background, status_background, stop_background
 
 
 class DaemonTests(unittest.TestCase):
@@ -50,6 +50,11 @@ class DaemonTests(unittest.TestCase):
             self.assertEqual(status_pid, second_pid)
 
             self.assertTrue(stop_background(pid_file, timeout_s=2.0))
+
+    def test_reload_background_returns_false_for_missing_pid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            pid_file = Path(tmp) / "missing.pid"
+            self.assertFalse(reload_background(pid_file))
 
 
 if __name__ == "__main__":

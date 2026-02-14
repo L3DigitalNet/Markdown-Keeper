@@ -8,27 +8,14 @@ from pathlib import Path
 
 from markdownkeeper.api.server import run_api_server
 from markdownkeeper.config import DEFAULT_CONFIG_PATH, load_config
-from markdownkeeper.daemon import restart_background, start_background, status_background, stop_background
+from markdownkeeper.daemon import reload_background, restart_background, start_background, status_background, stop_background
 from markdownkeeper.indexer.generator import generate_all_indexes
 from markdownkeeper.links.validator import validate_links
 from markdownkeeper.processor.parser import parse_markdown
 from markdownkeeper.service import write_systemd_units
-from markdownkeeper.storage.repository import embedding_coverage, find_documents_by_concept, get_document, regenerate_embeddings, search_documents, semantic_search_documents, upsert_document
+from markdownkeeper.storage.repository import benchmark_semantic_queries, embedding_coverage, evaluate_semantic_precision, find_documents_by_concept, get_document, regenerate_embeddings, search_documents, semantic_search_documents, system_stats, upsert_document
 from markdownkeeper.storage.schema import initialize_database
 from markdownkeeper.watcher.service import is_watchdog_available, watch_loop, watch_loop_watchdog
-from markdownkeeper.indexer.generator import generate_all_indexes
-from markdownkeeper.links.validator import validate_links
-from markdownkeeper.processor.parser import parse_markdown
-from markdownkeeper.storage.repository import find_documents_by_concept, get_document, search_documents, semantic_search_documents, upsert_document
-from markdownkeeper.storage.schema import initialize_database
-from markdownkeeper.watcher.service import is_watchdog_available, watch_loop, watch_loop_watchdog
-from markdownkeeper.storage.repository import find_documents_by_concept, get_document, search_documents, upsert_document
-from markdownkeeper.storage.schema import initialize_database
-from markdownkeeper.watcher.service import watch_loop
-from markdownkeeper.config import DEFAULT_CONFIG_PATH, load_config
-from markdownkeeper.processor.parser import parse_markdown
-from markdownkeeper.storage.repository import get_document, search_documents, upsert_document
-from markdownkeeper.storage.schema import initialize_database
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -114,6 +101,10 @@ def build_parser() -> argparse.ArgumentParser:
     daemon_restart.add_argument("--pid-file", type=Path, default=None)
     daemon_restart.add_argument("--db-path", type=Path, default=None)
 
+    daemon_reload = subparsers.add_parser("daemon-reload", help="Reload background daemon config via SIGHUP")
+    daemon_reload.add_argument("target", choices=["watch", "api"])
+    daemon_reload.add_argument("--pid-file", type=Path, default=None)
+
     embeddings_generate = subparsers.add_parser("embeddings-generate", help="Generate/rebuild document embeddings")
     embeddings_generate.add_argument("--db-path", type=Path, default=None, help="Override DB path")
     embeddings_generate.add_argument("--model", type=str, default="all-MiniLM-L6-v2")
@@ -121,6 +112,23 @@ def build_parser() -> argparse.ArgumentParser:
     embeddings_status = subparsers.add_parser("embeddings-status", help="Show embedding coverage")
     embeddings_status.add_argument("--db-path", type=Path, default=None, help="Override DB path")
     embeddings_status.add_argument("--format", choices=["text", "json"], default="text")
+
+    embeddings_eval = subparsers.add_parser("embeddings-eval", help="Evaluate semantic precision@k from JSON cases")
+    embeddings_eval.add_argument("cases_file", type=Path, help="JSON file with [{query, expected_ids}] entries")
+    embeddings_eval.add_argument("--db-path", type=Path, default=None, help="Override DB path")
+    embeddings_eval.add_argument("--k", type=int, default=5)
+    embeddings_eval.add_argument("--format", choices=["text", "json"], default="json")
+
+    semantic_benchmark = subparsers.add_parser("semantic-benchmark", help="Run semantic latency/precision benchmark")
+    semantic_benchmark.add_argument("cases_file", type=Path, help="JSON file with [{query, expected_ids}] entries")
+    semantic_benchmark.add_argument("--db-path", type=Path, default=None, help="Override DB path")
+    semantic_benchmark.add_argument("--k", type=int, default=5)
+    semantic_benchmark.add_argument("--iterations", type=int, default=3)
+    semantic_benchmark.add_argument("--format", choices=["text", "json"], default="json")
+
+    stats = subparsers.add_parser("stats", help="Show operational metrics summary")
+    stats.add_argument("--db-path", type=Path, default=None, help="Override DB path")
+    stats.add_argument("--format", choices=["text", "json"], default="json")
 
     systemd = subparsers.add_parser("write-systemd", help="Generate systemd service unit files")
     systemd.add_argument("--output-dir", type=Path, default=Path("deploy/systemd"))
@@ -168,7 +176,6 @@ def _handle_scan_file(args: argparse.Namespace) -> int:
     content = args.file.read_text(encoding="utf-8")
     parsed = parse_markdown(content)
     document_id = upsert_document(db_path, args.file.resolve(), parsed)
-    document_id = upsert_document(db_path, args.file, parsed)
 
     if args.format == "json":
         print(
@@ -216,19 +223,6 @@ def _handle_query(args: argparse.Namespace) -> int:
 
     if args.format == "json":
         print(json.dumps({"query": args.query, "search_mode": args.search_mode, "count": len(results), "documents": docs_payload}, indent=2))
-    results = search_documents(db_path, args.query, limit=max(1, args.limit))
-
-    if args.format == "json":
-        print(
-            json.dumps(
-                {
-                    "query": args.query,
-                    "count": len(results),
-                    "documents": [asdict(result) for result in results],
-                },
-                indent=2,
-            )
-        )
     else:
         if not results:
             print("No documents matched query")
@@ -241,7 +235,6 @@ def _handle_get_doc(args: argparse.Namespace) -> int:
     db_path = _resolve_db_path(args.config, args.db_path)
     initialize_database(db_path)
     result = get_document(db_path, args.id, include_content=args.include_content, max_tokens=args.max_tokens, section=args.section)
-    result = get_document(db_path, args.id)
 
     if result is None:
         print(f"Document id={args.id} not found")
@@ -403,6 +396,16 @@ def _handle_daemon_restart(args: argparse.Namespace) -> int:
     return 0
 
 
+def _handle_daemon_reload(args: argparse.Namespace) -> int:
+    pid_file = args.pid_file or _default_pid_path(args.target)
+    reloaded = reload_background(pid_file)
+    if reloaded:
+        print(f"Reloaded {args.target} daemon pid_file={pid_file}")
+        return 0
+    print(f"No running {args.target} daemon found for pid_file={pid_file}")
+    return 1
+
+
 
 
 def _handle_embeddings_generate(args: argparse.Namespace) -> int:
@@ -426,6 +429,75 @@ def _handle_embeddings_status(args: argparse.Namespace) -> int:
         )
     return 0
 
+
+
+def _handle_stats(args: argparse.Namespace) -> int:
+    db_path = _resolve_db_path(args.config, args.db_path)
+    initialize_database(db_path)
+    payload = system_stats(db_path)
+    if args.format == "json":
+        print(json.dumps(payload, indent=2))
+    else:
+        queue = payload["queue"]
+        print(
+            f"docs={payload['documents']} links={payload['links']} "
+            f"queue_queued={queue['queued']} queue_failed={queue['failed']} "
+            f"queue_lag_s={queue['lag_seconds']}"
+        )
+    return 0
+
+
+def _handle_semantic_benchmark(args: argparse.Namespace) -> int:
+    db_path = _resolve_db_path(args.config, args.db_path)
+    initialize_database(db_path)
+    if not args.cases_file.exists() or not args.cases_file.is_file():
+        print(f"Cases file not found: {args.cases_file}")
+        return 1
+
+    payload = json.loads(args.cases_file.read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        print("Cases file must be a JSON array")
+        return 1
+
+    result = benchmark_semantic_queries(
+        db_path,
+        payload,
+        k=max(1, int(args.k)),
+        iterations=max(1, int(args.iterations)),
+    )
+    if args.format == "json":
+        print(json.dumps(result, indent=2))
+    else:
+        lat = result["latency_ms"]
+        print(
+            f"precision@{result['k']}={result['precision_at_k']:.3f} "
+            f"avg_ms={lat['avg']} p50_ms={lat['p50']} p95_ms={lat['p95']} max_ms={lat['max']}"
+        )
+    return 0
+
+
+def _handle_embeddings_eval(args: argparse.Namespace) -> int:
+    db_path = _resolve_db_path(args.config, args.db_path)
+    initialize_database(db_path)
+    if not args.cases_file.exists() or not args.cases_file.is_file():
+        print(f"Cases file not found: {args.cases_file}")
+        return 1
+
+    payload = json.loads(args.cases_file.read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        print("Cases file must be a JSON array")
+        return 1
+
+    result = evaluate_semantic_precision(db_path, payload, k=max(1, int(args.k)))
+    if args.format == "json":
+        print(json.dumps(result, indent=2))
+    else:
+        print(
+            f"precision@{result['k']}={result['precision_at_k']:.3f} "
+            f"cases={result['cases']}"
+        )
+    return 0
+
 def _handle_write_systemd(args: argparse.Namespace) -> int:
     paths = write_systemd_units(
         output_dir=args.output_dir,
@@ -434,7 +506,6 @@ def _handle_write_systemd(args: argparse.Namespace) -> int:
     )
     print(f"Wrote unit: {paths.watcher_unit}")
     print(f"Wrote unit: {paths.api_unit}")
-
     return 0
 
 
@@ -457,8 +528,12 @@ def main() -> int:
         "daemon-stop": _handle_daemon_stop,
         "daemon-status": _handle_daemon_status,
         "daemon-restart": _handle_daemon_restart,
+        "daemon-reload": _handle_daemon_reload,
         "embeddings-generate": _handle_embeddings_generate,
         "embeddings-status": _handle_embeddings_status,
+        "embeddings-eval": _handle_embeddings_eval,
+        "stats": _handle_stats,
+        "semantic-benchmark": _handle_semantic_benchmark,
         "write-systemd": _handle_write_systemd,
     }
 

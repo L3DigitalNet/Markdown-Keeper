@@ -25,8 +25,11 @@ class ServiceTests(unittest.TestCase):
             api = paths.api_unit.read_text(encoding="utf-8")
             self.assertIn("ExecStart=/opt/mdkeeper --config /etc/mdk.toml watch --mode auto", watcher)
             self.assertIn("ExecStart=/opt/mdkeeper --config /etc/mdk.toml serve-api", api)
-            self.assertIn("ExecReload=/opt/mdkeeper --config /etc/mdk.toml daemon-restart watch", watcher)
-            self.assertIn("ExecReload=/opt/mdkeeper --config /etc/mdk.toml daemon-restart api", api)
+            self.assertIn("ExecReload=/opt/mdkeeper --config /etc/mdk.toml daemon-reload watch", watcher)
+            self.assertIn("ExecReload=/opt/mdkeeper --config /etc/mdk.toml daemon-reload api", api)
+            self.assertIn("NoNewPrivileges=true", watcher)
+            self.assertIn("ProtectSystem=strict", watcher)
+            self.assertIn("User=markdownkeeper", api)
 
 
 if __name__ == "__main__":
