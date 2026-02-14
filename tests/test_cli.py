@@ -416,5 +416,121 @@ extensions=[".md"]
             self.assertEqual(payload["count"], 1)
 
 
+    def test_write_systemd_generates_unit_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out_dir = Path(tmp) / "systemd"
+            buf = io.StringIO()
+            with mock.patch(
+                "sys.argv",
+                [
+                    "mdkeeper",
+                    "write-systemd",
+                    "--output-dir",
+                    str(out_dir),
+                    "--exec-path",
+                    "/opt/mdkeeper",
+                    "--config-path",
+                    "/etc/mdk.toml",
+                ],
+            ):
+                with contextlib.redirect_stdout(buf):
+                    code = main()
+
+            self.assertEqual(code, 0)
+            self.assertTrue((out_dir / "markdownkeeper.service").exists())
+            self.assertTrue((out_dir / "markdownkeeper-api.service").exists())
+            self.assertIn("Wrote unit:", buf.getvalue())
+
+
+
+    def test_embeddings_generate_and_status_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
+            md_file = Path(tmp) / "emb.md"
+            md_file.write_text("# Embeddings\nhello world", encoding="utf-8")
+
+            with mock.patch("sys.argv", ["mdkeeper", "scan-file", str(md_file), "--db-path", str(db_path)]):
+                main()
+
+            gen_buf = io.StringIO()
+            with mock.patch(
+                "sys.argv",
+                ["mdkeeper", "embeddings-generate", "--db-path", str(db_path)],
+            ):
+                with contextlib.redirect_stdout(gen_buf):
+                    gen_code = main()
+            self.assertEqual(gen_code, 0)
+            self.assertIn("Generated embeddings", gen_buf.getvalue())
+
+            status_buf = io.StringIO()
+            with mock.patch(
+                "sys.argv",
+                ["mdkeeper", "embeddings-status", "--db-path", str(db_path), "--format", "json"],
+            ):
+                with contextlib.redirect_stdout(status_buf):
+                    status_code = main()
+            self.assertEqual(status_code, 0)
+            payload = json.loads(status_buf.getvalue())
+            self.assertEqual(payload["documents"], 1)
+            self.assertEqual(payload["missing"], 0)
+
+    def test_daemon_commands_use_pid_file_and_exit_codes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            pid_file = Path(tmp) / "watch.pid"
+            with mock.patch("markdownkeeper.cli.main.start_background", return_value=1234) as start_mock:
+                out = io.StringIO()
+                with mock.patch(
+                    "sys.argv",
+                    ["mdkeeper", "daemon-start", "watch", "--pid-file", str(pid_file)],
+                ):
+                    with contextlib.redirect_stdout(out):
+                        code = main()
+                self.assertEqual(code, 0)
+                self.assertIn("pid=1234", out.getvalue())
+                start_mock.assert_called_once()
+
+            with mock.patch("markdownkeeper.cli.main.status_background", return_value=(True, 1234)):
+                out = io.StringIO()
+                with mock.patch(
+                    "sys.argv",
+                    ["mdkeeper", "daemon-status", "watch", "--pid-file", str(pid_file)],
+                ):
+                    with contextlib.redirect_stdout(out):
+                        code = main()
+                self.assertEqual(code, 0)
+                self.assertIn("running", out.getvalue())
+
+            with mock.patch("markdownkeeper.cli.main.stop_background", return_value=True):
+                out = io.StringIO()
+                with mock.patch(
+                    "sys.argv",
+                    ["mdkeeper", "daemon-stop", "watch", "--pid-file", str(pid_file)],
+                ):
+                    with contextlib.redirect_stdout(out):
+                        code = main()
+                self.assertEqual(code, 0)
+                self.assertIn("Stopped", out.getvalue())
+
+            with mock.patch("markdownkeeper.cli.main.restart_background", return_value=2345) as restart_mock:
+                out = io.StringIO()
+                with mock.patch(
+                    "sys.argv",
+                    ["mdkeeper", "daemon-restart", "watch", "--pid-file", str(pid_file)],
+                ):
+                    with contextlib.redirect_stdout(out):
+                        code = main()
+                self.assertEqual(code, 0)
+                self.assertIn("Restarted", out.getvalue())
+                restart_mock.assert_called_once()
+
+            with mock.patch("markdownkeeper.cli.main.status_background", return_value=(False, None)):
+                with mock.patch(
+                    "sys.argv",
+                    ["mdkeeper", "daemon-status", "watch", "--pid-file", str(pid_file)],
+                ):
+                    code = main()
+                self.assertEqual(code, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

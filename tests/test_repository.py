@@ -8,6 +8,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -17,6 +18,12 @@ from markdownkeeper.storage.repository import (
     find_documents_by_concept,
     get_document,
     search_documents,
+    _compute_text_embedding,
+    embedding_coverage,
+    regenerate_embeddings,
+    semantic_search_documents,
+    upsert_document,
+)
     semantic_search_documents,
     upsert_document,
 )
@@ -146,6 +153,74 @@ class RepositoryTests(unittest.TestCase):
             assert row is not None
             self.assertGreaterEqual(int(row[0]), 1)
 
+
+    def test_upsert_document_generates_embedding_row(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
+            initialize_database(db_path)
+            file_path = Path(tmp) / "embed.md"
+            parsed = parse_markdown("# Embed\nvector metadata test")
+            doc_id = upsert_document(db_path, file_path, parsed)
+
+            with sqlite3.connect(db_path) as connection:
+                row = connection.execute(
+                    "SELECT embedding, model_name FROM embeddings WHERE document_id = ?",
+                    (doc_id,),
+                ).fetchone()
+            self.assertIsNotNone(row)
+            assert row is not None
+            self.assertEqual(str(row[1]), "token-hash-v1")
+            self.assertTrue(len(str(row[0])) > 2)
+
+    def test_semantic_search_can_use_embedding_when_lexical_overlap_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
+            initialize_database(db_path)
+            file_path = Path(tmp) / "doc.md"
+            parsed = parse_markdown("# Title\nCompletely unrelated text")
+            doc_id = upsert_document(db_path, file_path, parsed)
+
+            query = "kubernetes"
+            query_embedding = _compute_text_embedding(query)
+            with sqlite3.connect(db_path) as connection:
+                connection.execute(
+                    "UPDATE embeddings SET embedding = ? WHERE document_id = ?",
+                    (json.dumps(query_embedding), doc_id),
+                )
+                connection.execute(
+                    "UPDATE documents SET title = ?, summary = ?, content = ? WHERE id = ?",
+                    ("Alpha", "Beta", "Gamma", doc_id),
+                )
+                connection.commit()
+
+            results = semantic_search_documents(db_path, query, limit=5)
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0].id, doc_id)
+
+
+    def test_regenerate_embeddings_and_coverage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
+            initialize_database(db_path)
+            file_path = Path(tmp) / "ops.md"
+            parsed = parse_markdown("# Ops\nrunbook")
+            upsert_document(db_path, file_path, parsed)
+
+            coverage_before = embedding_coverage(db_path)
+            self.assertEqual(coverage_before["documents"], 1)
+            self.assertEqual(coverage_before["embedded"], 1)
+
+            with sqlite3.connect(db_path) as connection:
+                connection.execute("UPDATE embeddings SET embedding = ''")
+                connection.commit()
+
+            coverage_missing = embedding_coverage(db_path)
+            self.assertEqual(coverage_missing["missing"], 1)
+
+            regenerated = regenerate_embeddings(db_path)
+            self.assertEqual(regenerated, 1)
+            coverage_after = embedding_coverage(db_path)
+            self.assertEqual(coverage_after["missing"], 0)
 
 if __name__ == "__main__":
     unittest.main()

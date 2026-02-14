@@ -3,10 +3,19 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict
 import json
+import sys
 from pathlib import Path
 
 from markdownkeeper.api.server import run_api_server
 from markdownkeeper.config import DEFAULT_CONFIG_PATH, load_config
+from markdownkeeper.daemon import restart_background, start_background, status_background, stop_background
+from markdownkeeper.indexer.generator import generate_all_indexes
+from markdownkeeper.links.validator import validate_links
+from markdownkeeper.processor.parser import parse_markdown
+from markdownkeeper.service import write_systemd_units
+from markdownkeeper.storage.repository import embedding_coverage, find_documents_by_concept, get_document, regenerate_embeddings, search_documents, semantic_search_documents, upsert_document
+from markdownkeeper.storage.schema import initialize_database
+from markdownkeeper.watcher.service import is_watchdog_available, watch_loop, watch_loop_watchdog
 from markdownkeeper.indexer.generator import generate_all_indexes
 from markdownkeeper.links.validator import validate_links
 from markdownkeeper.processor.parser import parse_markdown
@@ -86,6 +95,37 @@ def build_parser() -> argparse.ArgumentParser:
     api.add_argument("--db-path", type=Path, default=None, help="Override DB path")
     api.add_argument("--host", type=str, default=None)
     api.add_argument("--port", type=int, default=None)
+
+    daemon_start = subparsers.add_parser("daemon-start", help="Start watch/api as background daemon")
+    daemon_start.add_argument("target", choices=["watch", "api"])
+    daemon_start.add_argument("--pid-file", type=Path, default=None)
+    daemon_start.add_argument("--db-path", type=Path, default=None)
+
+    daemon_stop = subparsers.add_parser("daemon-stop", help="Stop background daemon")
+    daemon_stop.add_argument("target", choices=["watch", "api"])
+    daemon_stop.add_argument("--pid-file", type=Path, default=None)
+
+    daemon_status = subparsers.add_parser("daemon-status", help="Show daemon status")
+    daemon_status.add_argument("target", choices=["watch", "api"])
+    daemon_status.add_argument("--pid-file", type=Path, default=None)
+
+    daemon_restart = subparsers.add_parser("daemon-restart", help="Restart background daemon")
+    daemon_restart.add_argument("target", choices=["watch", "api"])
+    daemon_restart.add_argument("--pid-file", type=Path, default=None)
+    daemon_restart.add_argument("--db-path", type=Path, default=None)
+
+    embeddings_generate = subparsers.add_parser("embeddings-generate", help="Generate/rebuild document embeddings")
+    embeddings_generate.add_argument("--db-path", type=Path, default=None, help="Override DB path")
+    embeddings_generate.add_argument("--model", type=str, default="all-MiniLM-L6-v2")
+
+    embeddings_status = subparsers.add_parser("embeddings-status", help="Show embedding coverage")
+    embeddings_status.add_argument("--db-path", type=Path, default=None, help="Override DB path")
+    embeddings_status.add_argument("--format", choices=["text", "json"], default="text")
+
+    systemd = subparsers.add_parser("write-systemd", help="Generate systemd service unit files")
+    systemd.add_argument("--output-dir", type=Path, default=Path("deploy/systemd"))
+    systemd.add_argument("--exec-path", type=str, default="/usr/local/bin/mdkeeper")
+    systemd.add_argument("--config-path", type=str, default="/etc/markdownkeeper/config.toml")
 
     return parser
 
@@ -307,6 +347,93 @@ def _handle_serve_api(args: argparse.Namespace) -> int:
     port = args.port or config.api.port
     print(f"Starting API server on {host}:{port}")
     run_api_server(host, port, db_path)
+    return 0
+
+
+def _default_pid_path(target: str) -> Path:
+    return Path(".markdownkeeper") / f"{target}.pid"
+
+
+def _daemon_command(args: argparse.Namespace, target: str) -> list[str]:
+    cmd = [sys.executable, "-m", "markdownkeeper.cli.main", "--config", str(args.config)]
+    if target == "watch":
+        cmd.extend(["watch", "--mode", "auto"])
+        if args.db_path is not None:
+            cmd.extend(["--db-path", str(args.db_path)])
+    else:
+        cmd.extend(["serve-api"])
+        if args.db_path is not None:
+            cmd.extend(["--db-path", str(args.db_path)])
+    return cmd
+
+
+def _handle_daemon_start(args: argparse.Namespace) -> int:
+    pid_file = args.pid_file or _default_pid_path(args.target)
+    cmd = _daemon_command(args, args.target)
+    pid = start_background(cmd, pid_file)
+    print(f"Started {args.target} daemon pid={pid} pid_file={pid_file}")
+    return 0
+
+
+def _handle_daemon_stop(args: argparse.Namespace) -> int:
+    pid_file = args.pid_file or _default_pid_path(args.target)
+    stopped = stop_background(pid_file)
+    if stopped:
+        print(f"Stopped {args.target} daemon pid_file={pid_file}")
+        return 0
+    print(f"No running {args.target} daemon found for pid_file={pid_file}")
+    return 1
+
+
+def _handle_daemon_status(args: argparse.Namespace) -> int:
+    pid_file = args.pid_file or _default_pid_path(args.target)
+    running, pid = status_background(pid_file)
+    if running:
+        print(f"{args.target} daemon is running pid={pid} pid_file={pid_file}")
+        return 0
+    print(f"{args.target} daemon is not running pid_file={pid_file}")
+    return 1
+
+
+def _handle_daemon_restart(args: argparse.Namespace) -> int:
+    pid_file = args.pid_file or _default_pid_path(args.target)
+    cmd = _daemon_command(args, args.target)
+    pid = restart_background(cmd, pid_file)
+    print(f"Restarted {args.target} daemon pid={pid} pid_file={pid_file}")
+    return 0
+
+
+
+
+def _handle_embeddings_generate(args: argparse.Namespace) -> int:
+    db_path = _resolve_db_path(args.config, args.db_path)
+    initialize_database(db_path)
+    count = regenerate_embeddings(db_path, model_name=args.model)
+    print(f"Generated embeddings for {count} documents using model={args.model}")
+    return 0
+
+
+def _handle_embeddings_status(args: argparse.Namespace) -> int:
+    db_path = _resolve_db_path(args.config, args.db_path)
+    initialize_database(db_path)
+    coverage = embedding_coverage(db_path)
+    if args.format == "json":
+        print(json.dumps(coverage, indent=2))
+    else:
+        print(
+            f"Embedding coverage documents={coverage['documents']} "
+            f"embedded={coverage['embedded']} missing={coverage['missing']}"
+        )
+    return 0
+
+def _handle_write_systemd(args: argparse.Namespace) -> int:
+    paths = write_systemd_units(
+        output_dir=args.output_dir,
+        exec_path=args.exec_path,
+        config_path=args.config_path,
+    )
+    print(f"Wrote unit: {paths.watcher_unit}")
+    print(f"Wrote unit: {paths.api_unit}")
 
     return 0
 
@@ -326,6 +453,13 @@ def main() -> int:
         "build-index": _handle_build_index,
         "watch": _handle_watch,
         "serve-api": _handle_serve_api,
+        "daemon-start": _handle_daemon_start,
+        "daemon-stop": _handle_daemon_stop,
+        "daemon-status": _handle_daemon_status,
+        "daemon-restart": _handle_daemon_restart,
+        "embeddings-generate": _handle_embeddings_generate,
+        "embeddings-status": _handle_embeddings_status,
+        "write-systemd": _handle_write_systemd,
     }
 
     handler = handlers.get(args.command)

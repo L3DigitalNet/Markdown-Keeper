@@ -5,6 +5,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 import hashlib
 import json
+import sqlite3
+
+from markdownkeeper.processor.parser import ParsedDocument
+from markdownkeeper.query.embeddings import compute_embedding, cosine_similarity
 import re
 import sqlite3
 
@@ -155,6 +159,29 @@ def upsert_document(database_path: Path, file_path: Path, parsed: ParsedDocument
             [(document_id, idx, heading_path, content, token_count) for idx, heading_path, content, token_count in chunks],
         )
 
+        embedding_source = " ".join(
+            [
+                str(parsed.title or ""),
+                str(parsed.summary or ""),
+                str(parsed.body or ""),
+                " ".join(parsed.tags),
+                " ".join(parsed.concepts),
+                str(parsed.category or ""),
+            ]
+        )
+        embedding, model_name = compute_embedding(embedding_source)
+        connection.execute(
+            """
+            INSERT INTO embeddings(document_id, embedding, model_name, generated_at)
+            VALUES(?, ?, ?, ?)
+            ON CONFLICT(document_id) DO UPDATE SET
+              embedding=excluded.embedding,
+              model_name=excluded.model_name,
+              generated_at=excluded.generated_at
+            """,
+            (document_id, json.dumps(embedding), model_name, now),
+        )
+
         connection.commit()
 
     return document_id
@@ -199,6 +226,28 @@ def list_documents(database_path: Path) -> list[DocumentRecord]:
 
 
 def _tokenize(text: str) -> set[str]:
+    import re
+
+    return {token for token in re.findall(r"[a-z0-9]+", text.lower()) if len(token) > 1}
+
+
+def _compute_text_embedding(text: str, dimensions: int = 64) -> list[float]:
+    # Compatibility shim for tests and transitional callers.
+    # dimensions is ignored when sentence-transformers is available.
+    vector, _ = compute_embedding(text)
+    if len(vector) == dimensions:
+        return vector
+    if not vector:
+        return [0.0] * dimensions
+    if len(vector) > dimensions:
+        return vector[:dimensions]
+    return vector + ([0.0] * (dimensions - len(vector)))
+
+
+def _cosine_similarity(left: list[float], right: list[float]) -> float:
+    return cosine_similarity(left, right)
+
+
     return {token for token in re.findall(r"[a-z0-9]+", text.lower()) if len(token) > 1}
 
 
@@ -262,6 +311,13 @@ def semantic_search_documents(database_path: Path, query: str, limit: int = 10) 
         query_tokens = _tokenize(cleaned)
         rows = connection.execute(
             """
+            SELECT d.id, d.path, d.title, d.summary, d.category, d.token_estimate, d.updated_at, d.content, e.embedding
+            FROM documents d
+            LEFT JOIN embeddings e ON e.document_id = d.id
+            """
+        ).fetchall()
+
+        query_embedding, _ = compute_embedding(cleaned)
             SELECT id, path, title, summary, category, token_estimate, updated_at, content
             FROM documents
             """
@@ -278,6 +334,21 @@ def semantic_search_documents(database_path: Path, query: str, limit: int = 10) 
                 ]
             )
             tokens = _tokenize(haystack)
+            overlap = len(query_tokens & tokens)
+            lexical_score = overlap / max(1, len(query_tokens)) if overlap > 0 else 0.0
+
+            vector_score = 0.0
+            embedding_raw = row[8]
+            if embedding_raw:
+                try:
+                    vector = [float(value) for value in json.loads(str(embedding_raw))]
+                    vector_score = cosine_similarity(query_embedding, vector)
+                except (ValueError, json.JSONDecodeError, TypeError):
+                    vector_score = 0.0
+
+            score = (0.7 * vector_score) + (0.3 * lexical_score)
+            if score <= 0.0:
+                continue
             if not tokens:
                 continue
             overlap = len(query_tokens & tokens)
@@ -301,6 +372,47 @@ def semantic_search_documents(database_path: Path, query: str, limit: int = 10) 
         return _rows_to_records(top_rows)
 
 
+
+
+def regenerate_embeddings(database_path: Path, model_name: str = "all-MiniLM-L6-v2") -> int:
+    with sqlite3.connect(database_path) as connection:
+        rows = connection.execute(
+            """
+            SELECT id, title, summary, category, content
+            FROM documents
+            """
+        ).fetchall()
+        now = _utc_now_iso()
+        updated = 0
+        for row in rows:
+            document_id = int(row[0])
+            source = " ".join([str(row[1] or ""), str(row[2] or ""), str(row[3] or ""), str(row[4] or "")])
+            embedding, resolved_model = compute_embedding(source, model_name=model_name)
+            connection.execute(
+                """
+                INSERT INTO embeddings(document_id, embedding, model_name, generated_at)
+                VALUES(?, ?, ?, ?)
+                ON CONFLICT(document_id) DO UPDATE SET
+                  embedding=excluded.embedding,
+                  model_name=excluded.model_name,
+                  generated_at=excluded.generated_at
+                """,
+                (document_id, json.dumps(embedding), resolved_model, now),
+            )
+            updated += 1
+        connection.commit()
+        return updated
+
+
+def embedding_coverage(database_path: Path) -> dict[str, int]:
+    with sqlite3.connect(database_path) as connection:
+        total = int(connection.execute("SELECT COUNT(*) FROM documents").fetchone()[0])
+        embedded = int(
+            connection.execute(
+                "SELECT COUNT(*) FROM embeddings WHERE embedding IS NOT NULL AND LENGTH(TRIM(embedding)) > 0"
+            ).fetchone()[0]
+        )
+    return {"documents": total, "embedded": embedded, "missing": max(0, total - embedded)}
 def search_documents(database_path: Path, query: str, limit: int = 10) -> list[DocumentRecord]:
     pattern = f"%{query.strip()}%"
     with sqlite3.connect(database_path) as connection:
