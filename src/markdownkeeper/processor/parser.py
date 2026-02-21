@@ -137,7 +137,7 @@ def parse_markdown(text: str) -> ParsedDocument:
 
     lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
     title = str(frontmatter.get("title") or (headings[0].text if headings else "Untitled"))
-    summary = " ".join(lines[:2])[:280]
+    summary = str(frontmatter.get("summary") or "")
     token_estimate = max(1, len(body.split()))
     content_hash = sha256(text.encode("utf-8")).hexdigest()
     tags = _split_list(frontmatter.get("tags"))

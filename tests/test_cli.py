@@ -301,6 +301,8 @@ class CliTests(unittest.TestCase):
                     "watch",
                     "--db-path",
                     str(db_path),
+                    "--mode",
+                    "polling",
                     "--iterations",
                     "1",
                     "--interval",
@@ -357,6 +359,31 @@ extensions=[".md"]
 
             self.assertEqual(code, 0)
             watch_loop_mock.assert_called_once()
+
+    def test_watch_watchdog_mode_with_iterations_derives_duration(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
+            docs = Path(tmp) / "docs"
+            docs.mkdir(parents=True, exist_ok=True)
+            cfg = Path(tmp) / "markdownkeeper.toml"
+            cfg.write_text(f'[watch]\nroots=["{docs.as_posix()}"]\nextensions=[".md"]\n', encoding="utf-8")
+
+            with mock.patch("markdownkeeper.cli.main.is_watchdog_available", return_value=True), \
+                 mock.patch("markdownkeeper.cli.main.watch_loop_watchdog") as wd_mock:
+                wd_mock.return_value.created = 0
+                wd_mock.return_value.modified = 0
+                wd_mock.return_value.deleted = 0
+                with mock.patch(
+                    "sys.argv",
+                    ["mdkeeper", "--config", str(cfg), "watch", "--db-path", str(db_path),
+                     "--iterations", "3", "--interval", "0.5"],
+                ):
+                    code = main()
+
+            self.assertEqual(code, 0)
+            wd_mock.assert_called_once()
+            _, call_kwargs = wd_mock.call_args
+            self.assertAlmostEqual(call_kwargs["duration_s"], 1.5, places=1)
 
     def test_watch_auto_uses_watchdog_when_available(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -657,6 +684,33 @@ extensions=[".md"]
                 ):
                     code = main()
                 self.assertEqual(code, 1)
+
+
+    def test_report_json_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
+            md_file = Path(tmp) / "doc.md"
+            md_file.write_text("# Report Test\nhello world", encoding="utf-8")
+            with mock.patch("sys.argv", ["mdkeeper", "scan-file", str(md_file), "--db-path", str(db_path)]):
+                main()
+
+            out = io.StringIO()
+            with mock.patch("sys.argv", ["mdkeeper", "report", "--db-path", str(db_path), "--format", "json"]):
+                with contextlib.redirect_stdout(out):
+                    code = main()
+            self.assertEqual(code, 0)
+            payload = json.loads(out.getvalue())
+            self.assertEqual(payload["total_documents"], 1)
+
+    def test_report_text_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / ".markdownkeeper" / "index.db"
+            out = io.StringIO()
+            with mock.patch("sys.argv", ["mdkeeper", "report", "--db-path", str(db_path), "--format", "text"]):
+                with contextlib.redirect_stdout(out):
+                    code = main()
+            self.assertEqual(code, 0)
+            self.assertIn("Health Report", out.getvalue())
 
 
 if __name__ == "__main__":

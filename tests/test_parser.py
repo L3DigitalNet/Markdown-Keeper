@@ -98,10 +98,10 @@ More content.
         self.assertEqual(len(externals), 2)
         self.assertEqual(len(internals), 1)
 
-    def test_parse_markdown_summary_truncated_to_280_chars(self) -> None:
+    def test_parse_markdown_summary_empty_without_frontmatter(self) -> None:
         long_line = "word " * 200
         parsed = parse_markdown(f"# Title\n{long_line}")
-        self.assertLessEqual(len(parsed.summary), 280)
+        self.assertEqual(parsed.summary, "")
 
     def test_slugify_handles_special_characters(self) -> None:
         self.assertEqual(_slugify("Hello World!"), "hello-world")

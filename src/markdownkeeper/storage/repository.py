@@ -9,8 +9,10 @@ import sqlite3
 import statistics
 import time
 
+from markdownkeeper.metadata.summarizer import generate_summary
 from markdownkeeper.processor.parser import ParsedDocument
 from markdownkeeper.query.embeddings import compute_embedding, cosine_similarity, is_model_embedding_available
+from markdownkeeper.query.faiss_index import FaissIndex, is_faiss_available as is_faiss_index_available
 
 
 @dataclass(slots=True)
@@ -107,6 +109,7 @@ def upsert_document(database_path: Path, file_path: Path, parsed: ParsedDocument
     with sqlite3.connect(database_path) as connection:
         connection.execute("PRAGMA foreign_keys = ON;")
         now = _utc_now_iso()
+        summary = parsed.summary or generate_summary(parsed)
         connection.execute(
             """
             INSERT INTO documents(path, title, summary, category, content, content_hash, token_estimate, updated_at, processed_at)
@@ -124,7 +127,7 @@ def upsert_document(database_path: Path, file_path: Path, parsed: ParsedDocument
             (
                 str(file_path),
                 parsed.title,
-                parsed.summary,
+                summary,
                 parsed.category,
                 parsed.body,
                 parsed.content_hash,
@@ -199,7 +202,7 @@ def upsert_document(database_path: Path, file_path: Path, parsed: ParsedDocument
         embedding_source = " ".join(
             [
                 str(parsed.title or ""),
-                str(parsed.summary or ""),
+                str(summary or ""),
                 str(parsed.body or ""),
                 " ".join(parsed.tags),
                 " ".join(parsed.concepts),
@@ -219,6 +222,7 @@ def upsert_document(database_path: Path, file_path: Path, parsed: ParsedDocument
             (document_id, json.dumps(embedding), model_name, now),
         )
 
+        _invalidate_cache(connection)
         connection.commit()
 
     return document_id
@@ -230,6 +234,7 @@ def delete_document_by_path(database_path: Path, file_path: Path) -> bool:
         deleted = connection.execute(
             "DELETE FROM documents WHERE path = ?", (str(file_path),)
         ).rowcount
+        _invalidate_cache(connection)
         connection.commit()
         return bool(deleted)
 
@@ -285,14 +290,27 @@ def _cosine_similarity(left: list[float], right: list[float]) -> float:
     return cosine_similarity(left, right)
 
 
-def _fetch_cache(connection: sqlite3.Connection, query_hash: str) -> list[int] | None:
+def _fetch_cache(connection: sqlite3.Connection, query_hash: str, ttl_seconds: int = 3600) -> list[int] | None:
     row = connection.execute(
-        "SELECT id, result_json FROM query_cache WHERE query_hash = ?",
+        "SELECT id, result_json, created_at FROM query_cache WHERE query_hash = ?",
         (query_hash,),
     ).fetchone()
     if row is None:
         return None
     cache_id = int(row[0])
+    created_at_str = str(row[2])
+
+    # TTL check
+    try:
+        created_ts = datetime.fromisoformat(created_at_str).timestamp()
+        age = time.time() - created_ts
+        if age > ttl_seconds:
+            connection.execute("DELETE FROM query_cache WHERE id = ?", (cache_id,))
+            return None
+    except ValueError:
+        connection.execute("DELETE FROM query_cache WHERE id = ?", (cache_id,))
+        return None
+
     payload = json.loads(str(row[1]))
     connection.execute(
         "UPDATE query_cache SET hit_count = hit_count + 1, last_accessed = ? WHERE id = ?",
@@ -317,7 +335,12 @@ def _store_cache(connection: sqlite3.Connection, query_hash: str, query_text: st
     )
 
 
-def semantic_search_documents(database_path: Path, query: str, limit: int = 10) -> list[DocumentRecord]:
+def _invalidate_cache(connection: sqlite3.Connection) -> None:
+    """Clear all cached query results."""
+    connection.execute("DELETE FROM query_cache")
+
+
+def semantic_search_documents(database_path: Path, query: str, limit: int = 10, ttl_seconds: int = 3600) -> list[DocumentRecord]:
     cleaned = query.strip().lower()
     if not cleaned:
         return []
@@ -326,7 +349,7 @@ def semantic_search_documents(database_path: Path, query: str, limit: int = 10) 
 
     with sqlite3.connect(database_path) as connection:
         connection.execute("PRAGMA foreign_keys = ON;")
-        cached_ids = _fetch_cache(connection, query_hash)
+        cached_ids = _fetch_cache(connection, query_hash, ttl_seconds=ttl_seconds)
         if cached_ids:
             placeholders = ",".join("?" for _ in cached_ids)
             rows = connection.execute(
@@ -454,6 +477,21 @@ def regenerate_embeddings(database_path: Path, model_name: str = "all-MiniLM-L6-
                 (document_id, json.dumps(embedding), resolved_model, now),
             )
             updated += 1
+        # Rebuild FAISS index from all embeddings
+        all_embeddings: list[tuple[int, list[float]]] = []
+        for row in rows:
+            doc_id = int(row[0])
+            emb_row = connection.execute(
+                "SELECT embedding FROM embeddings WHERE document_id = ?", (doc_id,)
+            ).fetchone()
+            if emb_row and emb_row[0]:
+                all_embeddings.append((doc_id, _deserialize_embedding(emb_row[0])))
+
+        faiss_idx = FaissIndex()
+        faiss_idx.build(all_embeddings)
+        index_path = database_path.parent / "faiss.index"
+        faiss_idx.save(index_path)
+
         connection.commit()
         return updated
 
@@ -528,6 +566,8 @@ def system_stats(database_path: Path, model_name: str = "all-MiniLM-L6-v2") -> d
         ).fetchone()
         docs = int(connection.execute("SELECT COUNT(*) FROM documents").fetchone()[0])
         links = int(connection.execute("SELECT COUNT(*) FROM links").fetchone()[0])
+        cache_entries = int(connection.execute("SELECT COUNT(*) FROM query_cache").fetchone()[0])
+        cache_hits = int(connection.execute("SELECT COALESCE(SUM(hit_count), 0) FROM query_cache").fetchone()[0])
 
     queue_lag_seconds = 0.0
     if oldest and oldest[0]:
@@ -542,6 +582,7 @@ def system_stats(database_path: Path, model_name: str = "all-MiniLM-L6-v2") -> d
         "links": links,
         "queue": {"queued": queued, "failed": failed, "lag_seconds": round(queue_lag_seconds, 3)},
         "embeddings": coverage,
+        "cache": {"entries": cache_entries, "total_hits": cache_hits},
     }
 
 
@@ -675,6 +716,61 @@ def _select_content(
         used += tc
 
     return "\n\n".join(selected)
+
+
+def generate_health_report(database_path: Path) -> dict[str, object]:
+    """Aggregate health metrics across all subsystems."""
+    with sqlite3.connect(database_path) as connection:
+        total_docs = int(connection.execute("SELECT COUNT(*) FROM documents").fetchone()[0])
+        total_tokens = int(connection.execute(
+            "SELECT COALESCE(SUM(token_estimate), 0) FROM documents"
+        ).fetchone()[0])
+
+        broken_internal = int(connection.execute(
+            "SELECT COUNT(*) FROM links WHERE is_external = 0 AND status = 'broken'"
+        ).fetchone()[0])
+        broken_external = int(connection.execute(
+            "SELECT COUNT(*) FROM links WHERE is_external = 1 AND status = 'broken'"
+        ).fetchone()[0])
+        unchecked_external = int(connection.execute(
+            "SELECT COUNT(*) FROM links WHERE is_external = 1 AND (status = 'unknown' OR status IS NULL)"
+        ).fetchone()[0])
+
+        missing_summaries = int(connection.execute(
+            "SELECT COUNT(*) FROM documents WHERE summary IS NULL OR TRIM(summary) = ''"
+        ).fetchone()[0])
+
+        embedded = int(connection.execute(
+            "SELECT COUNT(*) FROM embeddings WHERE embedding IS NOT NULL AND LENGTH(TRIM(embedding)) > 0"
+        ).fetchone()[0])
+        coverage_pct = round((embedded / total_docs * 100) if total_docs > 0 else 0.0, 1)
+
+        cache_entries = int(connection.execute("SELECT COUNT(*) FROM query_cache").fetchone()[0])
+        cache_hits = int(connection.execute(
+            "SELECT COALESCE(SUM(hit_count), 0) FROM query_cache"
+        ).fetchone()[0])
+
+        queue_queued = int(connection.execute(
+            "SELECT COUNT(*) FROM events WHERE status = 'queued'"
+        ).fetchone()[0])
+        queue_failed = int(connection.execute(
+            "SELECT COUNT(*) FROM events WHERE status = 'failed'"
+        ).fetchone()[0])
+
+    return {
+        "total_documents": total_docs,
+        "total_tokens": total_tokens,
+        "broken_internal_links": broken_internal,
+        "broken_external_links": broken_external,
+        "unchecked_external_links": unchecked_external,
+        "missing_summaries": missing_summaries,
+        "embedding_coverage_pct": coverage_pct,
+        "embedded_documents": embedded,
+        "cache_entries": cache_entries,
+        "cache_total_hits": cache_hits,
+        "queue_queued": queue_queued,
+        "queue_failed": queue_failed,
+    }
 
 
 def get_document(
