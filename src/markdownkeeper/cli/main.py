@@ -59,7 +59,8 @@ def build_parser() -> argparse.ArgumentParser:
     check_links = subparsers.add_parser("check-links", help="Validate indexed links")
     check_links.add_argument("--db-path", type=Path, default=None, help="Override DB path")
     check_links.add_argument("--format", choices=["text", "json"], default="text")
-
+    check_links.add_argument("--check-external", action="store_true", default=False,
+                             help="Also validate external HTTP links")
 
     find_concept = subparsers.add_parser("find-concept", help="Find docs by concept")
     find_concept.add_argument("concept", type=str)
@@ -257,7 +258,7 @@ def _handle_get_doc(args: argparse.Namespace) -> int:
 def _handle_check_links(args: argparse.Namespace) -> int:
     db_path = _resolve_db_path(args.config, args.db_path)
     initialize_database(db_path)
-    results = validate_links(db_path)
+    results = validate_links(db_path, check_external=args.check_external)
     broken = [asdict(item) for item in results if item.status != "ok"]
 
     if args.format == "json":
