@@ -27,10 +27,17 @@ class ApiConfig:
 
 
 @dataclass(slots=True)
+class MetadataConfig:
+    required_frontmatter_fields: list[str] = field(default_factory=lambda: ["title"])
+    auto_fill_category: bool = True
+
+
+@dataclass(slots=True)
 class AppConfig:
     watch: WatchConfig = field(default_factory=WatchConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
     api: ApiConfig = field(default_factory=ApiConfig)
+    metadata: MetadataConfig = field(default_factory=MetadataConfig)
 
 
 DEFAULT_CONFIG_PATH = Path("markdownkeeper.toml")
@@ -46,6 +53,7 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> AppConfig:
     watch = raw.get("watch", {})
     storage = raw.get("storage", {})
     api = raw.get("api", {})
+    metadata = raw.get("metadata", {})
 
     return AppConfig(
         watch=WatchConfig(
@@ -59,5 +67,9 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> AppConfig:
         api=ApiConfig(
             host=str(api.get("host", "127.0.0.1")),
             port=int(api.get("port", 8765)),
+        ),
+        metadata=MetadataConfig(
+            required_frontmatter_fields=list(metadata.get("required_frontmatter_fields", ["title"])),
+            auto_fill_category=bool(metadata.get("auto_fill_category", True)),
         ),
     )
