@@ -311,12 +311,19 @@ def _handle_watch(args: argparse.Namespace) -> int:
         mode = "watchdog" if is_watchdog_available() else "polling"
 
     if mode == "watchdog":
+        duration = args.duration
+        if duration is None and args.iterations is not None:
+            duration = args.iterations * max(0.05, args.interval)
+            print(
+                f"watchdog mode: --iterations approximated as --duration {duration:.1f}s",
+                file=sys.stderr,
+            )
         result = watch_loop_watchdog(
             database_path=db_path,
             roots=roots,
             extensions=config.watch.extensions,
             debounce_s=max(0.05, args.interval),
-            duration_s=args.duration,
+            duration_s=duration,
         )
     else:
         result = watch_loop(
