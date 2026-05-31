@@ -1,6 +1,6 @@
 # What Is Deployed
 
-**Last updated:** 2026-05-30
+**Last updated:** 2026-05-31
 
 MarkdownKeeper is a self-hosted CLI + library, not a hosted service. Nothing runs as a
 managed deployment.
