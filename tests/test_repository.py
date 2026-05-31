@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -12,25 +12,26 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from unittest import mock
 
 from markdownkeeper.processor.parser import parse_markdown
 from markdownkeeper.storage.repository import (
     _chunk_document,
+    _compute_text_embedding,
     _deserialize_embedding,
+    benchmark_semantic_queries,
     delete_document_by_path,
+    embedding_coverage,
+    evaluate_semantic_precision,
     find_documents_by_concept,
+    generate_health_report,
     get_document,
     list_documents,
-    search_documents,
-    _compute_text_embedding,
-    embedding_coverage,
-    benchmark_semantic_queries,
-    evaluate_semantic_precision,
     regenerate_embeddings,
+    search_documents,
     semantic_search_documents,
     system_stats,
     upsert_document,
-    generate_health_report,
 )
 from markdownkeeper.storage.schema import initialize_database
 
@@ -157,7 +158,12 @@ class RepositoryTests(unittest.TestCase):
             initialize_database(db_path)
             file_path = Path(tmp) / "embed.md"
             parsed = parse_markdown("# Embed\nvector metadata test")
-            doc_id = upsert_document(db_path, file_path, parsed)
+            # Force the deterministic hash path so the asserted model_name is stable
+            # whether or not sentence-transformers is installed in the test env.
+            with mock.patch(
+                "markdownkeeper.query.embeddings._load_model", return_value=None
+            ):
+                doc_id = upsert_document(db_path, file_path, parsed)
 
             with sqlite3.connect(db_path) as connection:
                 row = connection.execute(

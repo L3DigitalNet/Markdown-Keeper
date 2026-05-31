@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -24,7 +24,13 @@ from markdownkeeper.query.embeddings import (
 
 class EmbeddingTests(unittest.TestCase):
     def test_compute_embedding_falls_back_without_sentence_transformers(self) -> None:
-        with mock.patch.dict(sys.modules, {"sentence_transformers": None}):
+        # Clear the model cache too: a warm cache (from another test loading the real
+        # model when sentence-transformers is installed) would bypass the import at
+        # _load_model and defeat the sys.modules patch.
+        from markdownkeeper.query import embeddings
+
+        with mock.patch.dict(embeddings._MODEL_CACHE, {}, clear=True), \
+                mock.patch.dict(sys.modules, {"sentence_transformers": None}):
             vector, model = compute_embedding("hello world")
         self.assertEqual(model, "token-hash-v1")
         self.assertGreater(len(vector), 0)
@@ -88,7 +94,13 @@ class EmbeddingTests(unittest.TestCase):
             self.assertFalse(is_model_embedding_available("nonexistent-model"))
 
     def test_compute_embedding_empty_text_returns_valid_vector(self) -> None:
-        vector, model = compute_embedding("")
+        # Force the deterministic hash path so this is stable whether or not
+        # sentence-transformers is installed (real-model behavior is covered by
+        # tests/integration).
+        from markdownkeeper.query import embeddings
+
+        with mock.patch.object(embeddings, "_load_model", return_value=None):
+            vector, model = compute_embedding("")
         self.assertEqual(model, "token-hash-v1")
         self.assertEqual(len(vector), 64)
 

@@ -124,9 +124,9 @@ Milestones 0.8.0 through 0.9.5 are complete. Remaining for v1.0.0:
 - Publish changelog, migration notes, and tag `v1.0.0`
 
 ```bash
-# Unit tests (181 tests, no ML dependencies required)
-python -m pytest tests/
+# Unit tests (174 tests, no ML dependencies required)
+python -m pytest tests/ --ignore=tests/integration
 
-# Integration tests (devcontainer only — requires sentence-transformers + faiss-cpu)
+# Integration tests (7 tests; requires sentence-transformers + faiss-cpu)
 bash scripts/run-integration-tests.sh
 ```
