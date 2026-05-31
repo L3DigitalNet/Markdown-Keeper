@@ -108,7 +108,7 @@ Start the server with `mdkeeper serve-api`, then:
 
 - [docs/USAGE.md](docs/USAGE.md) — Complete CLI and API reference, configuration,
   semantic search, embeddings, and LLM agent integration patterns
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — System architecture, data flow,
+- [docs/architecture.md](docs/architecture.md) — System architecture, data flow,
   database schema, and component diagrams
 - [docs/OPERATIONS_RUNBOOK.md](docs/OPERATIONS_RUNBOOK.md) — Install, upgrade,
   rollback, and troubleshooting
@@ -124,7 +124,7 @@ Milestones 0.8.0 through 0.9.5 are complete. Remaining for v1.0.0:
 - Publish changelog, migration notes, and tag `v1.0.0`
 
 ```bash
-# Unit tests (174 tests, ~12s, no ML dependencies required)
+# Unit tests (181 tests, no ML dependencies required)
 python -m pytest tests/
 
 # Integration tests (devcontainer only — requires sentence-transformers + faiss-cpu)
