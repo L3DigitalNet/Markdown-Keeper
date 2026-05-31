@@ -33,8 +33,6 @@
 
 ## Open (post-1.0, not blocking)
 
-- GitHub Release from the `v1.0.0` tag (not yet created — tag is pushed; consider
-  `gh release create v1.0.0 -F` notes from `CHANGELOG.md`).
 - Sustained high-throughput watcher stress benchmark + baseline metrics.
 - Larger-corpus semantic tuning (current precision@5 1.000 is on the curated 25-doc
   fixture set, not arbitrary corpora).
