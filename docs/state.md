@@ -17,10 +17,16 @@
 
 ## Active incidents / drift
 
-- **`main` ↔ `origin/testing` diverged: 16 ahead / 3 behind.** `testing` is the
-  integration branch (do not delete). `testing`-only commits: Serena project config,
-  an architecture doc, a git-conventions doc. `main`-only: handoff-v3 migration +
-  community-health files + auto-commits. Reconcile before tagging v1.0.0.
+- _(none open)_
+
+## Resolved
+
+- **`main` ↔ `testing` divergence — resolved 2026-05-31.** The comprehensive doc work
+  stranded on `testing` (architecture/usage/readme) was ported onto `main` (`b3e2895`);
+  `testing` then merged `main` and snapped its tree identical to `main` (`0f0e72d`).
+  `main` is now an ancestor of `testing`; trees match. Old `testing` tip preserved at
+  tag `testing-pre-resync` (.serena config + pre-handoff CLAUDE.md/git-conventions edits,
+  intentionally not carried over). Branch retained per "never delete `testing`".
 - **`deployed.md` was "Unknown" until 2026-05-30** — now corrected (no releases;
   only a GHCR devcontainer image). See `docs/deployed.md`.
 
