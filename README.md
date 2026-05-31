@@ -117,11 +117,11 @@ Start the server with `mdkeeper serve-api`, then:
 
 ## Development Status
 
-Milestones 0.8.0 through 0.9.5 are complete. Remaining for v1.0.0:
-
-- Run full integration and performance test suite against KPI targets
-- Freeze CLI and API contracts; publish compatibility guarantees
-- Publish changelog, migration notes, and tag `v1.0.0`
+**v1.0.0 — released 2026-05-31.** Compatibility for the `1.x` line is frozen
+(see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)); release notes are in
+[CHANGELOG.md](CHANGELOG.md). Integration KPIs met on the fixture corpus:
+precision@5 1.000 (≥ 0.90), search p95 0.3 ms (< 150 ms), 25 docs embedded in
+13.5 s (< 30 s).
 
 ```bash
 # Unit tests (174 tests, no ML dependencies required)

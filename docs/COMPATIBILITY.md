@@ -1,26 +1,57 @@
-# MarkdownKeeper Compatibility Guarantees (pre-1.0 draft)
+# MarkdownKeeper Compatibility Guarantees
 
-This document defines intended compatibility guarantees to finalize for `v1.0.0`.
+**Status:** frozen for the `v1.x` line as of `v1.0.0`.
+
+MarkdownKeeper follows [Semantic Versioning](https://semver.org/). Within the `1.x`
+line, the surfaces below are stable: they will not change in backward-incompatible ways
+until `v2.0.0`. Additive changes (new commands, new fields, new endpoints) may ship in
+minor releases.
 
 ## CLI compatibility
 
-- Existing command names will remain stable through `v1.0.0`.
-- JSON output keys for machine-oriented commands (`query`, `get-doc`, `find-concept`, `embeddings-status`, `embeddings-eval`, `semantic-benchmark`, `stats`) are treated as compatibility-sensitive.
-- New fields may be added to JSON payloads, but existing fields should not be removed before a major release.
+The following command names are frozen for `v1.x`:
+
+`init-db`, `show-config`, `scan-file`, `query`, `get-doc`, `check-links`,
+`find-concept`, `build-index`, `watch`, `serve-api`, `daemon-start`, `daemon-stop`,
+`daemon-status`, `daemon-restart`, `daemon-reload`, `embeddings-generate`,
+`embeddings-status`, `embeddings-eval`, `semantic-benchmark`, `stats`, `report`,
+`write-systemd`.
+
+- JSON output (`--format json`) for the machine-oriented commands — `query`, `get-doc`,
+  `find-concept`, `embeddings-status`, `embeddings-eval`, `semantic-benchmark`, `stats`,
+  `report`, `show-config` — has a stable key schema. Existing keys are not removed or
+  renamed within `1.x`; new keys may be added.
+- The `mdkeeper` console-script entry point is stable.
 
 ## API compatibility
 
-- API endpoint paths under `/api/v1/*` will remain stable for `v1`.
-- Existing method names in JSON-RPC-style payload handling (`semantic_query`, `get_document`, `find_by_concept`) are compatibility-sensitive.
-- Error payload structure should stay backward compatible for existing clients.
+Endpoint paths and JSON-RPC method names frozen for `v1.x`:
+
+| Method | Path | RPC `method` |
+|---|---|---|
+| `GET` | `/health` | — |
+| `POST` | `/api/v1/query` | `semantic_query` |
+| `POST` | `/api/v1/get_doc` | `get_document` |
+| `POST` | `/api/v1/find_concept` | `find_by_concept` |
+
+- The `/api/v1/*` prefix is reserved for the `v1` contract. Breaking changes ship under a
+  new prefix (`/api/v2/*`), not by mutating `v1`.
+- Existing response fields (e.g. `result.documents[].id`) and the error-payload structure
+  remain backward compatible within `1.x`. New fields may be added.
 
 ## Storage compatibility
 
-- `initialize_database` remains the migration/bootstrap entrypoint.
-- Migrations are additive where possible (new columns/indexes/tables) and should avoid destructive changes during the `v1` line.
+- `initialize_database` is the stable migration/bootstrap entry point.
+- Schema migrations are additive within `1.x` (new columns, indexes, tables). Destructive
+  migrations are deferred to a major release and, if ever required, ship with documented
+  operator steps.
+- A `v1.x` database opened by a newer `1.y` build is migrated forward automatically.
 
-## Upgrade policy target for v1.0.0
+## Versioning & deprecation policy
 
-- Document all breaking changes in release notes.
-- Provide migration guidance for any required manual operator actions.
-- Maintain backward compatibility in minor releases (`1.x`).
+- **Patch (`1.0.x`)** — bug fixes, no surface change.
+- **Minor (`1.x.0`)** — additive only (new commands/fields/endpoints); existing contracts
+  preserved.
+- **Major (`2.0.0`)** — the only release allowed to break the surfaces above.
+- Breaking changes are announced in `CHANGELOG.md` with migration guidance at least one
+  minor release before removal where feasible.
