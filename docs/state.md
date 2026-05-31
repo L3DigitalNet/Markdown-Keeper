@@ -1,19 +1,20 @@
 # State
 
-**Last updated:** 2026-05-30
+**Last updated:** 2026-05-31
 
 > Live git log, working tree, and pointers are appended by the SessionStart hook —
 > this file carries only semantic state. Keep it short (DOC-001).
 
 ## Snapshot
 
-- **Product milestone:** 0.9.5 complete. 1.0.0 is the only open milestone.
-- **Package version (`pyproject`):** still `0.1.0`. The bump to `1.0.0` is itself an
-  open release task — do not read `0.1.0` as "early/unfinished".
-- **Tests:** 181 collected, pass without ML deps. ML path (`sentence-transformers`,
-  `faiss-cpu`) is optional; default runtime uses deterministic hash-bucket embeddings.
-- **Code:** frozen since `1080c38` (integration test suite, late April). Every commit
-  since is handoff-system docs/scaffolding, not feature work.
+- **Released `v1.0.0`** (2026-05-31, tag `v1.0.0`, commit `8b17b6b`). First stable
+  release; compatibility frozen for the `1.x` line (`docs/COMPATIBILITY.md`).
+- **Version:** `pyproject` + package `__version__` both `1.0.0`.
+- **Tests:** 174 unit (no ML deps) + 7 integration (require `sentence-transformers` +
+  `faiss-cpu`) = 181 total. All green. KPIs met on the 25-doc fixture corpus:
+  precision@5 1.000, search p95 0.3 ms, 25 docs embedded 13.5 s.
+- **Local ML env:** `.venv` (Python 3.13, CPU torch + ML extras) — run integration
+  via `.venv/bin/python -m pytest tests/integration/`.
 
 ## Active incidents / drift
 
@@ -30,14 +31,11 @@
 - **`deployed.md` was "Unknown" until 2026-05-30** — now corrected (no releases;
   only a GHCR devcontainer image). See `docs/deployed.md`.
 
-## Open for v1.0.0
+## Open (post-1.0, not blocking)
 
-- [ ] Run full integration/performance suite and meet KPI targets
-- [ ] Freeze CLI/API contracts; document compatibility guarantees (`docs/COMPATIBILITY.md`)
-- [ ] Publish changelog + migration notes, bump `pyproject` to `1.0.0`, tag `v1.0.0`
-
-### Carry-over tuning (not release-blocking)
-
-- Sustained high-throughput watcher stress benchmark + baseline metrics
-- Larger-corpus semantic tuning to lift precision@5
-- Ranking quality for lexical + concept queries
+- GitHub Release from the `v1.0.0` tag (not yet created — tag is pushed; consider
+  `gh release create v1.0.0 -F` notes from `CHANGELOG.md`).
+- Sustained high-throughput watcher stress benchmark + baseline metrics.
+- Larger-corpus semantic tuning (current precision@5 1.000 is on the curated 25-doc
+  fixture set, not arbitrary corpora).
+- Ranking quality for lexical + concept queries.
