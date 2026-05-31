@@ -1,120 +1,132 @@
-# Markdown-Keeper
+# MarkdownKeeper
 
-LLM-accessible markdown file database.
+An LLM-accessible markdown documentation database. Indexes `.md` files into SQLite,
+provides hybrid semantic and lexical search, and exposes results via CLI and JSON-RPC
+HTTP API. Designed to run as a persistent service that LLM agents query
+programmatically.
 
-## Current Development Milestone
+## Features
 
-This repository now includes a working foundation for MarkdownKeeper:
-
-- Python package structure under `src/markdownkeeper`
-- Config loading from `markdownkeeper.toml`
-- SQLite schema initialization for core entities (`documents`, `headings`, `links`,
-  `tags`, `concepts`, `document_chunks`, `embeddings`, `query_cache`, `events`)
-- CLI commands for indexing, retrieval, validation, indexing artifacts, watching, and
-  API hosting:
-  - `mdkeeper show-config`
-  - `mdkeeper init-db`
-  - `mdkeeper scan-file <file>`
-  - `mdkeeper query <text>`
-  - `mdkeeper get-doc <id>`
-  - `mdkeeper check-links`
-  - `mdkeeper build-index`
-  - `mdkeeper find-concept <concept>`
-  - `mdkeeper watch`
-  - `mdkeeper serve-api`
-  - `mdkeeper write-systemd`
-  - `mdkeeper daemon-start <watch|api>`
-  - `mdkeeper daemon-stop <watch|api>`
-  - `mdkeeper daemon-status <watch|api>`
-  - `mdkeeper daemon-restart <watch|api>`
-  - `mdkeeper daemon-reload <watch|api>`
-  - `mdkeeper stats`
-  - `mdkeeper embeddings-generate`
-  - `mdkeeper embeddings-status`
-  - `mdkeeper embeddings-eval <cases.json>`
-  - `mdkeeper semantic-benchmark <cases.json>`
+- **Hybrid semantic search** — weighted combination of vector similarity, chunk-level
+  matching, lexical overlap, concept matching, and a freshness signal
+- **Two-tier embeddings** — sentence-transformers (all-MiniLM-L6-v2) with a
+  deterministic hash-based fallback for offline and test environments
+- **Durable file watcher** — inotify-backed (via watchdog) or polling mode, with a
+  SQLite-persisted event queue, event coalescing, and automatic retry (up to 5 attempts)
+- **JSON-RPC HTTP API** — token-budgeted content delivery with section filtering, built
+  for LLM agent consumption
+- **Static index generation** — markdown index files grouped by category, tag, and
+  concept
+- **Link validation** — internal file paths and external URLs with per-domain rate
+  limiting
+- **Systemd integration** — hardened service units with full lifecycle management
+  (start, stop, reload, restart)
 
 ## Quick Start
 
 ```bash
-python -m markdownkeeper.cli.main init-db --db-path .markdownkeeper/index.db
-python -m markdownkeeper.cli.main scan-file README.md --db-path .markdownkeeper/index.db --format json
-python -m markdownkeeper.cli.main query "markdown" --db-path .markdownkeeper/index.db --format json --search-mode semantic
-python -m markdownkeeper.cli.main build-index --db-path .markdownkeeper/index.db --output-dir _index
-python -m markdownkeeper.cli.main check-links --db-path .markdownkeeper/index.db --format json
-python -m markdownkeeper.cli.main find-concept kubernetes --db-path .markdownkeeper/index.db --format json
-python -m markdownkeeper.cli.main get-doc 1 --db-path .markdownkeeper/index.db --format json --include-content --max-tokens 200
-python -m markdownkeeper.cli.main watch --mode auto --interval 0.5 --duration 5
-python -m markdownkeeper.cli.main write-systemd --output-dir deploy/systemd
-python -m markdownkeeper.cli.main daemon-start watch --pid-file .markdownkeeper/watch.pid
-python -m markdownkeeper.cli.main daemon-status watch --pid-file .markdownkeeper/watch.pid
-python -m markdownkeeper.cli.main daemon-stop watch --pid-file .markdownkeeper/watch.pid
-python -m markdownkeeper.cli.main daemon-restart watch --pid-file .markdownkeeper/watch.pid
-python -m markdownkeeper.cli.main daemon-reload watch --pid-file .markdownkeeper/watch.pid
-python -m markdownkeeper.cli.main stats --db-path .markdownkeeper/index.db --format json
-python -m markdownkeeper.cli.main embeddings-generate --db-path .markdownkeeper/index.db
-python -m markdownkeeper.cli.main embeddings-status --db-path .markdownkeeper/index.db --format json
-python -m markdownkeeper.cli.main embeddings-eval examples/semantic-cases.json --db-path .markdownkeeper/index.db --k 5 --format json
-python -m markdownkeeper.cli.main semantic-benchmark examples/semantic-cases.json --db-path .markdownkeeper/index.db --k 5 --iterations 3 --format json
+# Install with semantic embedding support
+pip install 'markdownkeeper[embeddings]'
+
+# Initialize the database
+mdkeeper init-db
+
+# Index some markdown files
+mdkeeper scan-file docs/README.md
+mdkeeper scan-file docs/guide.md
+
+# Search
+mdkeeper query "kubernetes deployment" --format json
+
+# Start the watcher and API as background daemons
+mdkeeper daemon-start watch
+mdkeeper daemon-start api
+
+# Check health
+mdkeeper stats --format json
+curl http://127.0.0.1:8765/health
 ```
 
-## API Example
+## Requirements
+
+| Dependency | Required? | Purpose |
+|---|---|---|
+| Python >= 3.10 | Yes | Runtime |
+| `watchdog >= 3.0.0` | Yes | File watching |
+| `tomli >= 2.0.1` | Yes (Python 3.10 only) | TOML config parsing |
+| `sentence-transformers >= 2.2` | Optional (`[embeddings]`) | Model-backed semantic search |
+| `faiss-cpu >= 1.7`, `numpy >= 1.24` | Optional (`[faiss]`) | FAISS vector index acceleration |
+
+## Installation
 
 ```bash
-python -m markdownkeeper.cli.main serve-api --db-path .markdownkeeper/index.db --host 127.0.0.1 --port 8765
+# Base install — hash-based embeddings only, no ML dependencies
+pip install markdownkeeper
+
+# With sentence-transformers for real semantic embeddings
+pip install 'markdownkeeper[embeddings]'
+
+# With FAISS acceleration (requires embeddings)
+pip install 'markdownkeeper[embeddings,faiss]'
 ```
 
-Then call:
+## CLI Commands
 
-- `POST /api/v1/query` with method `semantic_query`
-- `POST /api/v1/get_doc` with method `get_document` (`include_content`, `max_tokens`,
-  `section` supported)
-- `POST /api/v1/find_concept` with method `find_by_concept`
-- `GET /health`
+| Command | Description |
+|---|---|
+| `init-db` | Initialize or migrate the SQLite database |
+| `scan-file <file>` | Parse and index a single markdown file |
+| `query <text>` | Search indexed documents (semantic or lexical) |
+| `get-doc <id>` | Retrieve a document by ID with optional content |
+| `find-concept <concept>` | Find documents associated with a concept |
+| `check-links` | Validate all indexed links (internal and external) |
+| `build-index` | Generate static markdown index files |
+| `watch` | Monitor directories and auto-index file changes |
+| `serve-api` | Start the JSON-RPC HTTP API server |
+| `daemon-start/stop/status/restart/reload <watch\|api>` | Manage background daemons |
+| `embeddings-generate` | Regenerate all document embeddings |
+| `embeddings-status` | Show embedding coverage statistics |
+| `embeddings-eval <cases.json>` | Evaluate search precision@k |
+| `semantic-benchmark <cases.json>` | Benchmark search latency and precision |
+| `stats` | Show operational statistics (documents, queue, embeddings) |
+| `report` | Generate a full health report with broken links and coverage |
+| `show-config` | Show resolved configuration as JSON |
+| `write-systemd` | Generate systemd service unit files |
 
-## Milestones to v1.0.0
+## API Endpoints
 
-Track progress by checking items as they are completed.
+Start the server with `mdkeeper serve-api`, then:
 
-### Milestone 0.8.0 — Reliability hardening
-
-- [x] Implement durable watcher queue persistence and replay after restart
-- [x] Add event coalescing and idempotent processing for create/modify/move/delete
-      bursts
-- [x] Validate restart-safe ingestion under rapid file changes
-
-### Milestone 0.9.0 — Semantic search quality
-
-- [x] Promote model-backed embeddings as primary runtime path (with fallback retained)
-- [x] Add chunk-level embedding retrieval and stronger hybrid ranking (vector +
-      lexical + concept + freshness)
-- [x] Add evaluation harness for precision@5 and semantic regression tests
-
-### Milestone 0.9.5 — Operations and packaging
-
-- [x] Finalize systemd hardening, lifecycle semantics, and config reload behavior
-- [x] Publish deployment runbook (install, upgrade, rollback, troubleshooting)
-- [x] Add structured metrics/logging for queue lag, embedding throughput, and API/query
-      latency
-
-### Milestone 1.0.0 — Release readiness
-
-- [ ] Run full integration/performance suite and meet KPI targets
-- [ ] Freeze CLI/API contracts and document compatibility guarantees
-- [ ] Publish changelog, migration notes, and tag `v1.0.0`
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/health` | Health check |
+| `POST` | `/api/v1/query` (method: `semantic_query`) | Semantic document search |
+| `POST` | `/api/v1/get_doc` (method: `get_document`) | Retrieve document by ID |
+| `POST` | `/api/v1/find_concept` (method: `find_by_concept`) | Find documents by concept |
 
 ## Documentation
 
-- See `docs/USAGE.md` for comprehensive usage documentation covering CLI commands, HTTP
-  API reference, configuration, semantic search, embeddings, and LLM agent integration.
-- See `docs/OPERATIONS_RUNBOOK.md` for install/upgrade/rollback and troubleshooting
-  guidance.
-- See `docs/COMPATIBILITY.md` for CLI/API/storage compatibility targets toward `v1.0.0`.
+- [docs/USAGE.md](docs/USAGE.md) — Complete CLI and API reference, configuration,
+  semantic search, embeddings, and LLM agent integration patterns
+- [docs/architecture.md](docs/architecture.md) — System architecture, data flow,
+  database schema, and component diagrams
+- [docs/OPERATIONS_RUNBOOK.md](docs/OPERATIONS_RUNBOOK.md) — Install, upgrade,
+  rollback, and troubleshooting
+- [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) — CLI/API/storage compatibility policy
+  toward v1.0.0
 
-## Remaining Work
+## Development Status
 
-- Execute sustained high-throughput watcher stress benchmark and publish baseline
-  metrics
-- Run larger-corpus semantic tuning to improve precision@5 beyond baseline thresholds
-- Continue expanding production ops docs (alerts, SLOs, incident playbooks)
-- Improve ranking quality for lexical + concept queries
+Milestones 0.8.0 through 0.9.5 are complete. Remaining for v1.0.0:
+
+- Run full integration and performance test suite against KPI targets
+- Freeze CLI and API contracts; publish compatibility guarantees
+- Publish changelog, migration notes, and tag `v1.0.0`
+
+```bash
+# Unit tests (181 tests, no ML dependencies required)
+python -m pytest tests/
+
+# Integration tests (devcontainer only — requires sentence-transformers + faiss-cpu)
+bash scripts/run-integration-tests.sh
+```
