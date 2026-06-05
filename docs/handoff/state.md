@@ -29,7 +29,7 @@
   tag `testing-pre-resync` (.serena config + pre-handoff CLAUDE.md/git-conventions edits,
   intentionally not carried over). Branch retained per "never delete `testing`".
 - **`deployed.md` was "Unknown" until 2026-05-30** — now corrected (no releases;
-  only a GHCR devcontainer image). See `docs/deployed.md`.
+  only a GHCR devcontainer image). See `docs/handoff/deployed.md`.
 
 ## Open (post-1.0, not blocking)
 

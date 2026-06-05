@@ -108,7 +108,7 @@ Start the server with `mdkeeper serve-api`, then:
 
 - [docs/USAGE.md](docs/USAGE.md) — Complete CLI and API reference, configuration,
   semantic search, embeddings, and LLM agent integration patterns
-- [docs/architecture.md](docs/architecture.md) — System architecture, data flow,
+- [docs/handoff/architecture.md](docs/handoff/architecture.md) — System architecture, data flow,
   database schema, and component diagrams
 - [docs/OPERATIONS_RUNBOOK.md](docs/OPERATIONS_RUNBOOK.md) — Install, upgrade,
   rollback, and troubleshooting

@@ -34,7 +34,7 @@ Repo-local review guidance for Codex review tasks.
 ## Review Rules
 
 - Review implementation code by default, not the test suite in isolation, unless the user explicitly asks for a test review.
-- Read `docs/state.md` and `docs/conventions.md` at the start of review work. Treat those files as primary review inputs.
+- Read `docs/handoff/state.md` and `docs/handoff/conventions.md` at the start of review work. Treat those files as primary review inputs.
 - Write saved reports for Claude and Codex as the primary readers.
 - Suggest the receiving-code-review workflow at the top of a saved report when that recommendation is relevant.
 
