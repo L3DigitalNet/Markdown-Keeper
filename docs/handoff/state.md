@@ -1,6 +1,6 @@
 # State
 
-**Last updated:** 2026-05-31
+**Last updated:** 2026-06-25
 
 > Live git log, working tree, and pointers are appended by the SessionStart hook —
 > this file carries only semantic state. Keep it short (DOC-001).
