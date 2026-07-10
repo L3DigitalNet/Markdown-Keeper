@@ -1,6 +1,6 @@
 # Global rules — always loaded
 
-Moved from `docs/handoff/conventions.md` DOC-001 / DOC-002 / DOC-003 on 2026-04-24 during handoff-system-v2 Phase 5.
+These rules complement the repo-local Agent Handoff standard.
 
 ---
 
@@ -15,7 +15,7 @@ Use short sections, flat bullets, and tables instead of narrative prose.
 
 **Why:** repo docs are for session continuity and quick lookup, not human-oriented long-form reading.
 
-**Sources:** `AGENTS.md`, handoff-system-v2 migration.
+**Sources:** `AGENTS.md`, Agent Handoff.
 **Related:** DOC-002, DOC-003.
 
 ---
@@ -23,7 +23,7 @@ Use short sections, flat bullets, and tables instead of narrative prose.
 ## DOC-002. Session start
 
 **Applies when:** starting any session in this repo.
-**Rule:** live state is injected automatically by `.claude/hooks/session_start.py` (SessionStart hook). Read other `docs/` files on demand per the layout listed in `CLAUDE.md`.
+**Rule:** live state is injected automatically by `.agents/hooks/agent-handoff/session_start.py`. Read other `docs/` files on demand per `CLAUDE.md`.
 
 ```md
 No manual "read handoff.md first" step — the hook injects state from
@@ -32,7 +32,7 @@ docs/handoff/state.md + git log + working tree into each session's context.
 
 **Why:** advisory "read first" directives drift. The hook makes the flow deterministic.
 
-**Sources:** handoff-system-v2 migration plan §8.
+**Sources:** Agent Handoff v1.
 **Related:** DOC-001.
 
 ---
@@ -50,5 +50,5 @@ docs/handoff/state.md + git log + working tree into each session's context.
 
 **Why:** a stable schema + path-scoped loading makes convention lookup deterministic and cheap.
 
-**Sources:** `AGENTS.md`, handoff-system-v2 migration plan §9.
+**Sources:** `AGENTS.md`, Agent Handoff.
 **Related:** DOC-001, DOC-002.
