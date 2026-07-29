@@ -28,9 +28,14 @@ mdkeeper query "markdown" --db-path .markdownkeeper/index.db --format json
 - The watcher subsystem uses a durable SQLite event queue with coalescing and retry.
 - `api/server.py` is stdlib `ThreadingHTTPServer`, not a framework app.
 
-<!-- BEGIN agent-handoff managed instructions -->
-Use the repo-local `$agent-handoff` skill at startup and closeout.
-Do not reread `docs/handoff/state.md` when SessionStart already injected it.
-Keep current status and tasks in `docs/STATUS.md` and `docs/TODO.md`; route durable facts through `docs/handoff/`.
-At closeout, update only changed facts, preserve user-authored work, store credential references only, and run relevant validation.
-<!-- END agent-handoff managed instructions -->
+<!-- prettier-ignore-start -->
+
+<!-- BEGIN project-standards:agent-handoff -->
+<!-- markdownlint-disable MD025 -->
+# Agent Handoff
+
+Use the repo-local `agent-handoff` skill at session startup and closeout. Do not reread state already injected by SessionStart. Keep project knowledge inside this repository and store credential references only, never values.
+<!-- markdownlint-enable MD025 -->
+<!-- END project-standards:agent-handoff -->
+
+<!-- prettier-ignore-end -->

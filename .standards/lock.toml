@@ -1,0 +1,230 @@
+[project_standards]
+schema_version = "1.1"
+catalog = "5"
+release = "5.11.0"
+catalog_digest = "sha256:492b1cc8a18b5e14974282bd8a797f27595398c27ad983a0934bdfc4562876e9"
+config_digest = "sha256:9f0f8f473427c3e326cbbeff6bf15235cda4db3cc75c6eb1acf847ca48f5cf98"
+
+[standards.agent-handoff]
+requested = "latest"
+resolved = "1.6"
+selection = "stable"
+payload_digest = "sha256:97041fb9a47c28cf0e2dd38c2de32be827af4b079de3943d6b74675bf52d81f8"
+effective_config_digest = "sha256:7d8ffcf355d1948151d6988e6b8cb809fcbeae2cc28cd3cd0bcd665563eef80f"
+
+[[artifacts]]
+path = ".agents/hooks/agent-handoff/session_start.py"
+adapter = "whole-file"
+scope = "$file"
+owners = ["agent-handoff"]
+versions = { agent-handoff = "1.6" }
+provenance = "source"
+policy = "managed"
+semantic_digest = "sha256:db2aad1965561c9d491eff3dc99520768bc4b3f89c2ee7e15ac922381bf15780"
+content_digest = "sha256:db2aad1965561c9d491eff3dc99520768bc4b3f89c2ee7e15ac922381bf15780"
+mode = "0755"
+created_container = true
+
+[[artifacts]]
+path = ".agents/skills/agent-handoff/SKILL.md"
+adapter = "whole-file"
+scope = "$file"
+owners = ["agent-handoff"]
+versions = { agent-handoff = "1.6" }
+provenance = "source"
+policy = "managed"
+semantic_digest = "sha256:946542a565303426fd4b28d1b138fadde942bd43c00e26bf06f77f9f1a553896"
+content_digest = "sha256:946542a565303426fd4b28d1b138fadde942bd43c00e26bf06f77f9f1a553896"
+created_container = true
+
+[[artifacts]]
+path = ".agents/skills/agent-handoff/agents/openai.yaml"
+adapter = "whole-file"
+scope = "$file"
+owners = ["agent-handoff"]
+versions = { agent-handoff = "1.6" }
+provenance = "source"
+policy = "managed"
+semantic_digest = "sha256:1b78fb94b81aad4df0bbf149a6d4c47b887fbe31e19818723bde5579ec33413c"
+content_digest = "sha256:1b78fb94b81aad4df0bbf149a6d4c47b887fbe31e19818723bde5579ec33413c"
+created_container = true
+
+[[artifacts]]
+path = ".claude/settings.json"
+adapter = "jsonc"
+scope = "keyed-set:/hooks/SessionStart#matcher=startup|resume|clear|compact"
+owners = ["agent-handoff"]
+versions = { agent-handoff = "1.6" }
+provenance = "provider"
+policy = "managed"
+semantic_digest = "sha256:824f897caa9eef5e7d50921e8eda3ece3f6d5f77e514fa58809751bacc4b2ac1"
+content_digest = "sha256:63293fc1cd70f15563d11aaec4073160bd7a2bc7ccfb263b8bbb597d5a9eb2a3"
+created_container = false
+
+[[artifacts]]
+path = ".codex/config.toml"
+adapter = "toml"
+scope = "keyed-set:/hooks/SessionStart#matcher=startup|resume|clear|compact"
+owners = ["agent-handoff"]
+versions = { agent-handoff = "1.6" }
+provenance = "provider"
+policy = "managed"
+semantic_digest = "sha256:bf93dc25849b2ea719ee310aca8c779d5ccf3c65adb5bb7466fd58004dd8a484"
+content_digest = "sha256:0a026810f0f5fabc4814d07f382cceb009c45f6550277198e76beb7b5690662c"
+created_container = false
+
+[[artifacts]]
+path = ".standards/packages/agent-handoff/policy.toml"
+adapter = "whole-file"
+scope = "$file"
+owners = ["agent-handoff"]
+versions = { agent-handoff = "1.6" }
+provenance = "source"
+policy = "managed"
+semantic_digest = "sha256:ca67fa9232375073d9dec834af6053057f31069ca83054e61948d2738a6e3e92"
+content_digest = "sha256:ca67fa9232375073d9dec834af6053057f31069ca83054e61948d2738a6e3e92"
+created_container = true
+
+[[artifacts]]
+path = "AGENTS.md"
+adapter = "markdown-block"
+scope = "block:agent-handoff"
+owners = ["agent-handoff"]
+versions = { agent-handoff = "1.6" }
+provenance = "provider"
+policy = "managed"
+semantic_digest = "sha256:632f927e3f1b4e9b02ab5d86cfbd4d802fe8079db8bfd77f42a63a92fbdb095d"
+content_digest = "sha256:632f927e3f1b4e9b02ab5d86cfbd4d802fe8079db8bfd77f42a63a92fbdb095d"
+created_container = false
+
+[[artifacts]]
+path = "CLAUDE.md"
+adapter = "markdown-block"
+scope = "block:agent-handoff"
+owners = ["agent-handoff"]
+versions = { agent-handoff = "1.6" }
+provenance = "provider"
+policy = "managed"
+semantic_digest = "sha256:632f927e3f1b4e9b02ab5d86cfbd4d802fe8079db8bfd77f42a63a92fbdb095d"
+content_digest = "sha256:632f927e3f1b4e9b02ab5d86cfbd4d802fe8079db8bfd77f42a63a92fbdb095d"
+created_container = false
+
+[[artifacts]]
+path = "docs/STATUS.md"
+adapter = "whole-file"
+scope = "$file"
+owners = ["agent-handoff"]
+versions = { agent-handoff = "1.6" }
+provenance = "source"
+policy = "create-only"
+semantic_digest = "sha256:502a62c79c241df3d18270199c6333da5851b944bd6a57a95efd86172852a576"
+content_digest = "sha256:502a62c79c241df3d18270199c6333da5851b944bd6a57a95efd86172852a576"
+created_container = false
+
+[[artifacts]]
+path = "docs/TODO.md"
+adapter = "whole-file"
+scope = "$file"
+owners = ["agent-handoff"]
+versions = { agent-handoff = "1.6" }
+provenance = "source"
+policy = "create-only"
+semantic_digest = "sha256:a4971a9546418e9b5ef6e94d347eab579c65258ae626b2de11e25b3e3d565493"
+content_digest = "sha256:a4971a9546418e9b5ef6e94d347eab579c65258ae626b2de11e25b3e3d565493"
+created_container = false
+
+[[artifacts]]
+path = "docs/handoff/architecture.md"
+adapter = "whole-file"
+scope = "$file"
+owners = ["agent-handoff"]
+versions = { agent-handoff = "1.6" }
+provenance = "source"
+policy = "create-only"
+semantic_digest = "sha256:7b529f4b8d6a792779e7a34bbe63b67200b58354fecb3a6c5315f9a9ec9cd848"
+content_digest = "sha256:7b529f4b8d6a792779e7a34bbe63b67200b58354fecb3a6c5315f9a9ec9cd848"
+created_container = false
+
+[[artifacts]]
+path = "docs/handoff/bugs/.gitkeep"
+adapter = "whole-file"
+scope = "$file"
+owners = ["agent-handoff"]
+versions = { agent-handoff = "1.6" }
+provenance = "source"
+policy = "create-only"
+semantic_digest = "sha256:01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+content_digest = "sha256:01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+created_container = false
+
+[[artifacts]]
+path = "docs/handoff/conventions.md"
+adapter = "whole-file"
+scope = "$file"
+owners = ["agent-handoff"]
+versions = { agent-handoff = "1.6" }
+provenance = "source"
+policy = "create-only"
+semantic_digest = "sha256:5253205ddc4e04771dcc7f03cca44f8a9072d7aa84a46cbf23e5854704f4b362"
+content_digest = "sha256:5253205ddc4e04771dcc7f03cca44f8a9072d7aa84a46cbf23e5854704f4b362"
+created_container = false
+
+[[artifacts]]
+path = "docs/handoff/credentials.md"
+adapter = "whole-file"
+scope = "$file"
+owners = ["agent-handoff"]
+versions = { agent-handoff = "1.6" }
+provenance = "source"
+policy = "create-only"
+semantic_digest = "sha256:5d5fac29d82eaaaaf5bb8e891443953197be8a1d430b2a7a5a4f0c34d4f58f0e"
+content_digest = "sha256:5d5fac29d82eaaaaf5bb8e891443953197be8a1d430b2a7a5a4f0c34d4f58f0e"
+created_container = false
+
+[[artifacts]]
+path = "docs/handoff/deployed.md"
+adapter = "whole-file"
+scope = "$file"
+owners = ["agent-handoff"]
+versions = { agent-handoff = "1.6" }
+provenance = "source"
+policy = "create-only"
+semantic_digest = "sha256:55f030f157c839bae0abc1fba85599e9d800e84a84e3ae8d1ac959f4d3367b27"
+content_digest = "sha256:55f030f157c839bae0abc1fba85599e9d800e84a84e3ae8d1ac959f4d3367b27"
+created_container = false
+
+[[artifacts]]
+path = "docs/handoff/sessions/.gitkeep"
+adapter = "whole-file"
+scope = "$file"
+owners = ["agent-handoff"]
+versions = { agent-handoff = "1.6" }
+provenance = "source"
+policy = "create-only"
+semantic_digest = "sha256:01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+content_digest = "sha256:01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+created_container = false
+
+[[artifacts]]
+path = "docs/handoff/specs-plans.md"
+adapter = "whole-file"
+scope = "$file"
+owners = ["agent-handoff"]
+versions = { agent-handoff = "1.6" }
+provenance = "source"
+policy = "create-only"
+semantic_digest = "sha256:ed98d7dc269d7aeca1b69fc3e63aeb49d602b2a07b2db8e1dc78011ef118bfe0"
+content_digest = "sha256:ed98d7dc269d7aeca1b69fc3e63aeb49d602b2a07b2db8e1dc78011ef118bfe0"
+created_container = false
+
+[[artifacts]]
+path = "docs/handoff/state.md"
+adapter = "whole-file"
+scope = "$file"
+owners = ["agent-handoff"]
+versions = { agent-handoff = "1.6" }
+provenance = "source"
+policy = "create-only"
+semantic_digest = "sha256:a40120dc9b06aac86e8d5d9d27f30a3839406ed6d8b79621164e99c75f5bc4b4"
+content_digest = "sha256:a40120dc9b06aac86e8d5d9d27f30a3839406ed6d8b79621164e99c75f5bc4b4"
+created_container = false

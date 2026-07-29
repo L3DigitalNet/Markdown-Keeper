@@ -12,9 +12,14 @@
 - `docs/handoff/bugs/` — per-file bug KB (grep by service or tag)
 - `docs/handoff/specs-plans.md` — pointer into `docs/specs/` and `docs/plans/`
 
-<!-- BEGIN agent-handoff managed instructions -->
-Use the repo-local `$agent-handoff` skill at startup and closeout.
-Do not reread `docs/handoff/state.md` when SessionStart already injected it.
-Keep current status and tasks in `docs/STATUS.md` and `docs/TODO.md`; route durable facts through `docs/handoff/`.
-At closeout, update only changed facts, preserve user-authored work, store credential references only, and run relevant validation.
-<!-- END agent-handoff managed instructions -->
+<!-- prettier-ignore-start -->
+
+<!-- BEGIN project-standards:agent-handoff -->
+<!-- markdownlint-disable MD025 -->
+# Agent Handoff
+
+Use the repo-local `agent-handoff` skill at session startup and closeout. Do not reread state already injected by SessionStart. Keep project knowledge inside this repository and store credential references only, never values.
+<!-- markdownlint-enable MD025 -->
+<!-- END project-standards:agent-handoff -->
+
+<!-- prettier-ignore-end -->
